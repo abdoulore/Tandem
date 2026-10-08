@@ -4,8 +4,7 @@ import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { ASSETS, ASSET_BY_TICKER, getAsset, isConverting, tokenSymbol } from "../shared/assets";
+import { ASSETS, ASSET_BY_TICKER, getAsset, isConverting, legAsset, tokenSymbol } from "../shared/assets";
 import { pairRatio, rawFromUi, sharesForSizing, triggerRatio, uiFromRaw } from "../shared/math";
 import { parseIntent } from "../shared/parser";
 import { DEFAULT_LIMITS, PRE_IPO_SLIPPAGE_BPS, canonicalDraft, type ExecStyle, type Intent, type IntentDraft, type Status } from "../shared/types";
@@ -15,7 +14,7 @@ import { driftLastWriteAt, startDriftLogger } from "./drift";
 import { summarize, type DriftSummary } from "./driftStats";
 import { Engine } from "./engine";
 import { PriceService } from "./prices";
-import { ata, buildApprovalTx, buildRevokeTx, conn, submitSigned, tokenAccountState } from "./solana";
+import { ata, buildApprovalTx, buildRevokeTx, conn, programId, submitSigned, tokenAccountState } from "./solana";
 import { store } from "./store";
 import { telegram } from "./telegram";
 import { TokenState } from "./tokenState";
@@ -369,9 +368,11 @@ app.post(
     const tx = VersionedTransaction.deserialize(Buffer.from(String(req.body?.signedTx ?? ""), "base64"));
     const keys = tx.message.staticAccountKeys;
     if (!keys[0]?.equals(new PublicKey(intent.owner))) throw new Error("Revoke must be paid and signed by the owner");
-    const source = ata(new PublicKey(intent.owner), getAsset(intent.from).mint);
+    // The source may be a stock token (Token-2022) or USDC (classic SPL Token).
+    const sourceMint = legAsset(intent.from).mint;
+    const source = ata(new PublicKey(intent.owner), sourceMint);
     const touchesApproval = tx.message.compiledInstructions.some(
-      (ix) => keys[ix.programIdIndex]?.equals(TOKEN_2022_PROGRAM_ID) && ix.accountKeyIndexes.some((k) => keys[k]?.equals(source)),
+      (ix) => keys[ix.programIdIndex]?.equals(programId(sourceMint)) && ix.accountKeyIndexes.some((k) => keys[k]?.equals(source)),
     );
     if (!touchesApproval) throw new Error("Not a revoke for this switch");
     return { signature: await submitSigned(String(req.body.signedTx)) };

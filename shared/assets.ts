@@ -7,9 +7,21 @@
 //   token = Pyth Crypto.<T>X/USD (24/7), rate = Pyth Crypto.<T>X/<T>.RR.
 // PreStock (pre-IPO companies, PreStocks): ref = PreStocks mark price, token = PreStocks token
 //   price. Pre-IPO tokens have no Pyth feeds; their ids below are local keys, not Pyth ids.
-// All mints are Token-2022. PreStocks also charge a 1% transfer fee.
+// Stock tokens are Token-2022 (PreStocks also charge a 1% transfer fee). Cash (USDC) is classic SPL Token.
 
 export type AssetKind = "xstock" | "prestock";
+export type TokenProgram = "spl" | "token-2022";
+
+/** Anything Tandem can hold on either side of a trade: a stock token or cash. */
+export interface Leg {
+  ticker: string;
+  name: string;
+  mint: string;
+  decimals: number;
+  program: TokenProgram;
+}
+
+export const USDC: Leg = { ticker: "USDC", name: "USD Coin", mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, program: "spl" };
 
 /** Where a PreStocks company is in its life: still private, or listed with tokens converting to the public stock. */
 export interface Lifecycle {
@@ -30,9 +42,10 @@ export interface Asset {
   aliases: string[];
   image?: string;
   lifecycle?: Lifecycle;
+  program: TokenProgram;
 }
 
-const RAW: Omit<Asset, "aliases" | "kind">[] = [
+const RAW: Omit<Asset, "aliases" | "kind" | "program">[] = [
   { ticker: "SPY", name: "S&P 500 ETF", mint: "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W", decimals: 8, feeds: { ref: "19e09bb805456ada3979a7d1cbb4b6d63babc3a0f8e8a9509f68afa5c4c11cd5", token: "2817b78438c769357182c04346fddaad1178c82f4048828fe0997c3c64624e14", rate: "9e916cc00d292da2367646ffd6537d6b8d0c3f15e2d5891ac44aed31291811a9" } },
   { ticker: "QQQ", name: "Nasdaq-100 ETF", mint: "Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ", decimals: 8, feeds: { ref: "9695e2b96ea7b3859da9ed25b7a46a920a776e2fdae19a7bcfdf2b219230452d", token: "178a6f73a5aede9d0d682e86b0047c9f333ed0efe5c6537ca937565219c4054d", rate: "5fe0ad9fd9bd888bbdfb609dbe8a6233248fa3dee25755f986f473c43938c7ca" } },
   { ticker: "NVDA", name: "NVIDIA", mint: "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh", decimals: 8, feeds: { ref: "b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593", token: "4244d07890e4610f46bbde67de8f43a4bf8b569eebe904f136b469f148503b7f", rate: "b675c4e9f46d94afa9174a7df09966b77a2950970bb50a77ec8ad4fcfd8266f4" } },
@@ -86,11 +99,13 @@ export const ASSETS: Asset[] = [
   ...RAW.map((a) => ({
     ...a,
     kind: "xstock" as const,
+    program: "token-2022" as const,
     aliases: [a.ticker.toLowerCase(), `${a.ticker.toLowerCase()}x`, a.name.toLowerCase(), ...(ALIASES[a.ticker] ?? [])],
   })),
   ...PRE.map((p) => ({
     ...p,
     kind: "prestock" as const,
+    program: "token-2022" as const,
     decimals: 9,
     feeds: { ref: `prestocks:${p.ticker}:mark`, token: `prestocks:${p.ticker}:token`, rate: `prestocks:${p.ticker}:rate` },
     aliases: [p.ticker.toLowerCase(), p.name.toLowerCase(), ...(ALIASES[p.ticker] ?? [])],
@@ -115,6 +130,20 @@ export const isConverting = (ticker: string) => ASSET_BY_TICKER[ticker]?.lifecyc
 export function tokenSymbol(ticker: string): string {
   const a = ASSET_BY_TICKER[ticker];
   return a?.kind === "xstock" ? `${ticker}x` : ticker;
+}
+
+/** A stock asset or cash, by ticker. */
+export function legAsset(ticker: string): Leg {
+  return ticker.toUpperCase() === USDC.ticker ? USDC : getAsset(ticker);
+}
+
+const PROGRAM_BY_MINT = new Map<string, TokenProgram>([...ASSETS, USDC].map((l) => [l.mint, l.program]));
+
+/** Which token program owns a mint Tandem trades. Unknown mints are an error, never a guess. */
+export function programOf(mint: string): TokenProgram {
+  const p = PROGRAM_BY_MINT.get(mint);
+  if (!p) throw new Error(`Unknown mint ${mint}`);
+  return p;
 }
 
 export function getAsset(ticker: string): Asset {

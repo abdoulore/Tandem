@@ -1,6 +1,7 @@
 // Dry-runs a one-tap confirm switch: the owner signs a Jupiter swap straight from their wallet, so
 // fee-charging tokens (PreStocks) move only once. Uses a real recent holder as a stand-in and
 // simulateTransaction(sigVerify: false).  Usage: npx tsx scripts/sim-confirm.ts OPENAI ANTHROPIC 0.01
+// OWNER=<pubkey> uses that wallet as the stand-in instead of scanning recent holders.
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { getAsset } from "../shared/assets";
 import { getQuote, getSwapTransaction, routeLabel } from "../server/jupiter";
@@ -14,8 +15,8 @@ const amountRaw = BigInt(Math.floor(Number(uiArg) * 10 ** src.decimals));
 // A recent holder with enough of the source token and some SOL for fees.
 const sigs = await conn.getSignaturesForAddress(new PublicKey(src.mint), { limit: 40 });
 const seen = new Set<string>();
-let owner: PublicKey | undefined;
-for (const s of sigs) {
+let owner: PublicKey | undefined = process.env.OWNER ? new PublicKey(process.env.OWNER) : undefined;
+for (const s of owner ? [] : sigs) {
   if (s.err || owner) continue;
   const tx = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 }).catch(() => null);
   for (const b of tx?.meta?.postTokenBalances ?? []) {

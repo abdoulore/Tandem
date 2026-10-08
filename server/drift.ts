@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ASSETS, type AssetKind } from "../shared/assets";
+import { ASSETS, USDC, type AssetKind } from "../shared/assets";
 import { uiFromRaw } from "../shared/math";
 import { config } from "./config";
 import { getQuote, routeLabel } from "./jupiter";
@@ -11,8 +11,6 @@ import type { TokenState } from "./tokenState";
 // One JSON line per asset per minute, plus a 100 USDC buy quote per asset every 5 minutes,
 // appended to DATA_DIR/drift/YYYY-MM-DD.jsonl (UTC date). Never throws.
 
-export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const USDC_DECIMALS = 6;
 const SAMPLE_MS = 60_000;
 const PROBE_MS = 5 * 60_000;
 const PROBE_GAP_MS = 3_000;
@@ -129,7 +127,7 @@ async function probe(prices: PriceService, tokens: TokenState) {
     const q = prices.quote(a.ticker);
     if (!q.ref || (a.kind === "prestock" && t - q.ref.publishTime > STALE_MARK_SEC)) continue;
     try {
-      const raw = await getQuote(USDC_MINT, a.mint, BigInt(PROBE_USD * 10 ** USDC_DECIMALS), 50, true);
+      const raw = await getQuote(USDC.mint, a.mint, BigInt(PROBE_USD * 10 ** USDC.decimals), 50, true);
       const outUi = uiFromRaw(raw.outAmount, a.decimals, tokens.multiplier(a.ticker));
       if (!(outUi > 0)) continue;
       const eff = PROBE_USD / outUi;

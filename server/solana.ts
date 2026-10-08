@@ -9,23 +9,29 @@ import {
 } from "@solana/web3.js";
 import {
   TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
   createApproveCheckedInstruction,
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { getAsset } from "../shared/assets";
+import { legAsset, programOf } from "../shared/assets";
 import { config } from "./config";
 import { getSwapInstructions, type JupQuote } from "./jupiter";
 
 export const conn = new Connection(config.rpcUrl, "confirmed");
 
-export const ata = (owner: PublicKey, mint: string) =>
-  getAssociatedTokenAddressSync(new PublicKey(mint), owner, true, TOKEN_2022_PROGRAM_ID);
+const SET_CU_LIMIT = 2; // ComputeBudget instruction tag for SetComputeUnitLimit
+const KEEPER_EXTRA_CU = 80_000;
 
-/** Raw balance and delegation of the owner's xStock account. */
+/** Classic SPL Token for USDC, Token-2022 for stock tokens. */
+export const programId = (mint: string) => (programOf(mint) === "spl" ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID);
+
+export const ata = (owner: PublicKey, mint: string) => getAssociatedTokenAddressSync(new PublicKey(mint), owner, true, programId(mint));
+
+/** Raw balance and delegation of the owner's account for a stock token or USDC. */
 export async function tokenAccountState(owner: PublicKey, ticker: string) {
-  const asset = getAsset(ticker);
+  const asset = legAsset(ticker);
   const address = ata(owner, asset.mint);
   const info = await conn.getParsedAccountInfo(address);
   const parsed = (info.value?.data as any)?.parsed?.info;
@@ -45,12 +51,12 @@ export async function tokenAccountState(owner: PublicKey, ticker: string) {
  * trigger fires, and the owner can revoke at any time.
  */
 export async function buildApprovalTx(owner: PublicKey, keeper: PublicKey, from: string, to: string, totalRaw: bigint) {
-  const src = getAsset(from);
-  const dst = getAsset(to);
+  const src = legAsset(from);
+  const dst = legAsset(to);
   const ixs: TransactionInstruction[] = [
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
-    createAssociatedTokenAccountIdempotentInstruction(owner, ata(owner, dst.mint), owner, new PublicKey(dst.mint), TOKEN_2022_PROGRAM_ID),
-    createApproveCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeper, owner, totalRaw, src.decimals, [], TOKEN_2022_PROGRAM_ID),
+    createAssociatedTokenAccountIdempotentInstruction(owner, ata(owner, dst.mint), owner, new PublicKey(dst.mint), programId(dst.mint)),
+    createApproveCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeper, owner, totalRaw, src.decimals, [], programId(src.mint)),
   ];
   const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash();
   const msg = new TransactionMessage({ payerKey: owner, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message();
@@ -58,10 +64,10 @@ export async function buildApprovalTx(owner: PublicKey, keeper: PublicKey, from:
 }
 
 export async function buildRevokeTx(owner: PublicKey, from: string, keeper: PublicKey, remainingRaw: bigint) {
-  const src = getAsset(from);
+  const src = legAsset(from);
   const ixs = [
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
-    createApproveCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeper, owner, remainingRaw, src.decimals, [], TOKEN_2022_PROGRAM_ID),
+    createApproveCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeper, owner, remainingRaw, src.decimals, [], programId(src.mint)),
   ];
   const { blockhash } = await conn.getLatestBlockhash();
   const msg = new TransactionMessage({ payerKey: owner, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message();
@@ -70,22 +76,29 @@ export async function buildRevokeTx(owner: PublicKey, from: string, keeper: Publ
 
 /**
  * The atomic switch, signed only by the keeper:
- *   1. pull `amountRaw` of the source stock from the owner (keeper is the SPL delegate)
+ *   1. pull `amountRaw` of the source (stock or USDC) from the owner (keeper is the SPL delegate)
  *   2. Jupiter swap source -> target with a hard minimum-out
  *   3. output lands directly in the owner's target-stock account
  * All-or-nothing: if the swap can't meet its minimum, the pull reverts too.
  */
 export async function switchInstructions(keeper: PublicKey, owner: PublicKey, from: string, to: string, amountRaw: bigint, quote: JupQuote) {
-  const src = getAsset(from);
-  const dst = getAsset(to);
+  const src = legAsset(from);
+  const dst = legAsset(to);
   const keeperSrc = ata(keeper, src.mint);
   const ownerDst = ata(owner, dst.mint);
   const jup = await getSwapInstructions(conn, quote, keeper, ownerDst);
+  // Jupiter sizes the compute limit for its swap alone; the account creation and the keeper's pull
+  // run in the same transaction, so give the limit room for them.
+  const budget = jup.computeBudget.map((ix) =>
+    ix.programId.equals(ComputeBudgetProgram.programId) && ix.data[0] === SET_CU_LIMIT
+      ? ComputeBudgetProgram.setComputeUnitLimit({ units: Math.min(1_400_000, ix.data.readUInt32LE(1) + KEEPER_EXTRA_CU) })
+      : ix,
+  );
   const ixs: TransactionInstruction[] = [
-    ...jup.computeBudget,
-    createAssociatedTokenAccountIdempotentInstruction(keeper, keeperSrc, keeper, new PublicKey(src.mint), TOKEN_2022_PROGRAM_ID),
-    createAssociatedTokenAccountIdempotentInstruction(keeper, ownerDst, owner, new PublicKey(dst.mint), TOKEN_2022_PROGRAM_ID),
-    createTransferCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeperSrc, keeper, amountRaw, src.decimals, [], TOKEN_2022_PROGRAM_ID),
+    ...budget,
+    createAssociatedTokenAccountIdempotentInstruction(keeper, keeperSrc, keeper, new PublicKey(src.mint), programId(src.mint)),
+    createAssociatedTokenAccountIdempotentInstruction(keeper, ownerDst, owner, new PublicKey(dst.mint), programId(dst.mint)),
+    createTransferCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeperSrc, keeper, amountRaw, src.decimals, [], programId(src.mint)),
     ...jup.setup,
     jup.swap,
     ...jup.cleanup,
