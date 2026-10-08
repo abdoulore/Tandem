@@ -179,8 +179,8 @@ function capCheck(usdValue: number): Check {
   };
 }
 
-/** Live switching needs authoritative references: Pyth for xStocks, PreStocks marks for pre-IPO. */
-const authoritative = (t: string) => prices.refSource(t) === "pyth" || prices.refSource(t) === "prestocks";
+/** Live orders need a trusted reference: Pyth or Finnhub (cross-checked with Backed) for xStocks, PreStocks marks for pre-IPO. */
+const authoritative = (t: string) => ["pyth", "prestocks", "finnhub"].includes(prices.refSource(t) ?? "");
 
 /** Sum of what the keeper must be allowed to pull from this owner's source account. */
 function committedRaw(owner: string, from: string, excludeId?: string): bigint {
@@ -234,6 +234,7 @@ app.get(
       pricesUpdatedAt: prices.updatedAt || null,
       priceSource: prices.source,
       pythFeeds: `${pyth.readable}/${pyth.total}`,
+      finnhubLive: prices.finnhubCount(),
       driftLastWriteAt: driftLastWriteAt || null,
       liveEnabled: config.liveExecution,
       autoEnabled: config.liveExecution && !!config.keeper && keeperSol.sol >= 0.005,
@@ -381,7 +382,7 @@ app.post(
       const err = verify(owner, intentMessage(owner, canonicalDraft(d), ts), String(req.body?.signature ?? ""), ts);
       if (err) throw new Error(err);
       if (!config.liveExecution) throw new Error("Live switching is disabled on this server");
-      if (!authoritative(d.from) || !authoritative(d.to)) throw new Error("Live switching needs Pyth or PreStocks reference prices for both stocks");
+      if (!authoritative(d.from) || !authoritative(d.to)) throw new Error("Live switching needs a real-time reference price for both stocks");
       if (styleFor(d.from) === "auto" && !config.keeper) throw new Error("Automatic switching is not available on this server right now");
     }
     const style = styleFor(d.from);
@@ -432,7 +433,7 @@ async function createFair(req: Request) {
     const err = verify(owner, fairMessage(owner, canonicalFairDraft(d), ts), String(req.body?.signature ?? ""), ts);
     if (err) throw new Error(err);
     if (!config.liveExecution) throw new Error("Live orders are disabled on this server");
-    if (!authoritative(d.asset)) throw new Error("Live orders need a Pyth or PreStocks reference price for this stock");
+    if (!authoritative(d.asset)) throw new Error("Live orders need a real-time reference price for this stock");
     if (style === "auto" && !config.keeper) throw new Error("Automatic orders are not available on this server right now");
     if (ctx.usdValue > config.maxLiveUsd) throw new Error(`Live orders are capped at $${config.maxLiveUsd} on this server`);
   }

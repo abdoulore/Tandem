@@ -3,7 +3,7 @@ import { tokenSymbol } from "../../shared/assets";
 import { describeCondition, fmtNum } from "../../shared/math";
 import type { Intent, RefSnapshot } from "../../shared/types";
 
-const SOURCE = { pyth: "Pyth", prestocks: "PreStocks mark", jupiter: "Backed via Jupiter" } as const;
+const SOURCE = { pyth: "Pyth", prestocks: "PreStocks mark", finnhub: "Finnhub", jupiter: "Backed via Jupiter" } as const;
 const pct = (n: number, d = 2) => `${n > 0 ? "+" : ""}${n.toFixed(d)}%`;
 const ageText = (s: number) => (s < 90 ? `${s}s old` : `${Math.round(s / 60)}m old`);
 

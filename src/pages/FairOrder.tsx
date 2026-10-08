@@ -16,7 +16,7 @@ import { NumberField } from "../components/NumberField";
 import { useDebounced, usePoll } from "../lib/hooks";
 import { b64, useAppData } from "../state/AppData";
 
-const SOURCE = { pyth: "Pyth", prestocks: "PreStocks mark", jupiter: "Backed via Jupiter" } as const;
+const SOURCE = { pyth: "Pyth", prestocks: "PreStocks mark", finnhub: "Finnhub", jupiter: "Backed via Jupiter" } as const;
 const SESSION = { regular: "US market open", extended: "Market closed", weekend: "Weekend", "24/7": "Trades 24/7" } as const;
 const age = (s: number) => (s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`);
 const signedPct = (bps: number) => `${bps >= 0 ? "+" : ""}${(bps / 100).toFixed(2)}%`;

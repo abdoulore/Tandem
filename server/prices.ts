@@ -32,6 +32,11 @@ const PRESTOCKS = ASSETS.filter((a) => a.kind === "prestock");
 const PRESTOCKS_API = "https://prestocks.com/api/prestocks";
 type PreStocksRow = { contract_address: string; markPrice: number; tokenPrice: number; markValuation?: number; impliedValuation?: number };
 const ALWAYS_OPEN = { isOpen: true, nextOpen: null, nextClose: null };
+const FINNHUB = "https://finnhub.io/api/v1";
+/** One request every 1.5 s keeps 13 stocks fresh every ~20 s, inside Finnhub's free 60 calls a minute. */
+const FINNHUB_GAP_MS = 1_500;
+/** A Finnhub price counts as live while it was fetched this recently; after that Backed takes the feed back. */
+const FINNHUB_LIVE_MS = 90_000;
 
 export class PriceService {
   source: "pyth" | "mixed" = "mixed";
@@ -45,6 +50,11 @@ export class PriceService {
   private lastJupiterPoll = 0;
   private valuations = new Map<string, { mark: number; implied: number }>();
   private dex = new Map<string, FeedPrice>();
+  /** Finnhub's stock price per ticker, with when we fetched it. */
+  private finnhub = new Map<string, FeedPrice & { fetchedAt: number }>();
+  /** Backed's stock price (from Jupiter) per ticker, kept separately as the cross-check for Finnhub. */
+  private backed = new Map<string, FeedPrice>();
+  private finnhubWarnAt = 0;
   private hours = new Map<string, MarketHours>();
   private history = new Map<string, Sample[]>();
   private historyFile = path.join(config.dataDir, "history.json");
@@ -76,6 +86,7 @@ export class PriceService {
     setInterval(() => this.pollMarketHours(), 5 * 60_000);
     setInterval(() => this.sample(), HISTORY_STEP_S * 1000);
     setInterval(() => this.saveHistory(), 60_000);
+    if (config.finnhubKey) void this.pollFinnhub();
     if (config.pythApiKey) {
       this.probeEntitlements().then(() => this.backfill().catch((e) => console.warn("backfill failed:", e.message)));
       setInterval(() => this.probeEntitlements(), 10 * 60_000);
@@ -193,7 +204,12 @@ export class PriceService {
       const p = body[a.mint];
       if (!p) continue;
       put(a.feeds.token, { price: p.usdPrice, conf: 0, publishTime: now });
-      if (p.stockData) put(a.feeds.ref, { price: p.stockData.price, conf: 0, publishTime: Math.floor(new Date(p.stockData.updatedAt).getTime() / 1000) });
+      if (p.stockData) {
+        const backed = { price: p.stockData.price, conf: 0, publishTime: Math.floor(new Date(p.stockData.updatedAt).getTime() / 1000) };
+        this.backed.set(a.ticker, backed);
+        // Finnhub, when live, is the reference; Backed stays as the cross-check.
+        if (!this.finnhubLive(a.ticker)) put(a.feeds.ref, backed);
+      }
       put(a.feeds.rate, { price: this.tokens.multiplier(a.ticker), conf: 0, publishTime: now });
     }
     this.updatedAt = Date.now();
@@ -241,6 +257,54 @@ export class PriceService {
   /** Pyth feeds this key can read, out of all the feeds Tandem asks for. */
   pythEntitlement() {
     return { readable: this.entitled.size, total: ALL_FEED_IDS.length };
+  }
+
+  // Finnhub: real-time US stock prices on a free key. Round-robin over the xStocks, one request at a time.
+  private async pollFinnhub() {
+    let i = 0;
+    for (;;) {
+      const a = XSTOCKS[i++ % XSTOCKS.length];
+      let wait = FINNHUB_GAP_MS;
+      try {
+        const res = await fetch(`${FINNHUB}/quote?symbol=${a.ticker}&token=${config.finnhubKey}`, { signal: AbortSignal.timeout(5_000) });
+        if (res.status === 429) wait = 30_000;
+        else if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        else {
+          const q = (await res.json()) as { c?: number; t?: number };
+          if (valid(q.c) && q.t) {
+            const v = { price: q.c, conf: 0, publishTime: q.t };
+            this.finnhub.set(a.ticker, { ...v, fetchedAt: Date.now() });
+            // Pyth, when the key is entitled, still wins.
+            if (!this.entitled.has(a.feeds.ref)) {
+              this.feeds.set(a.feeds.ref, v);
+              this.feedSource.set(a.feeds.ref, "finnhub");
+            }
+          }
+        }
+      } catch (e) {
+        // The key is in the URL, so never log it; the message alone is enough.
+        if (Date.now() - this.finnhubWarnAt > 3_600_000) {
+          this.finnhubWarnAt = Date.now();
+          console.warn(`Finnhub poll failed: ${(e as Error).message}`);
+        }
+      }
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+
+  private finnhubLive(ticker: string): boolean {
+    const f = this.finnhub.get(ticker);
+    return !!f && Date.now() - f.fetchedAt < FINNHUB_LIVE_MS;
+  }
+
+  /** Backed's own stock price (via Jupiter), the independent cross-check for the reference. */
+  backedPrice(ticker: string): FeedPrice | undefined {
+    return this.backed.get(ticker);
+  }
+
+  /** Stocks whose reference is a live Finnhub price right now. */
+  finnhubCount(): number {
+    return XSTOCKS.filter((a) => this.finnhubLive(a.ticker)).length;
   }
 
   /** Where the token actually trades on Solana right now (Jupiter), if fresh. */

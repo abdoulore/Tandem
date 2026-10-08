@@ -19,6 +19,8 @@ const READY_GRACE_MS = 120_000;
 const FAIR_QUOTE_MS = 20_000;
 /** Off-hours, the reference is the last regular-session print: allow one that covers weekends and holidays. */
 const OFF_HOURS_REF_MAX_SEC = 100 * 3600;
+/** Finnhub and Backed must agree within this in market hours before anything fills. */
+const AGREE_BPS = 50;
 /** The same refusal on the same order is logged at most this often. */
 const REFUSAL_EVERY_MS = 10 * 60_000;
 
@@ -65,17 +67,17 @@ export class Engine {
       { t: to, side: "buy" as const, kind: getAsset(to).kind, src: this.prices.refSource(to), ref: this.prices.ref(to), q: this.prices.quote(to) },
     ];
     const srcLabel = (l: (typeof legs)[number]) =>
-      l.src === "pyth" ? "Pyth" : l.src === "prestocks" ? "PreStocks mark" : l.src === "jupiter" ? "Backed via Jupiter" : "loading";
+      l.src === "pyth" ? "Pyth" : l.src === "prestocks" ? "PreStocks mark" : l.src === "finnhub" ? "Finnhub" : l.src === "jupiter" ? "Backed via Jupiter" : "loading";
 
-    // Live switching only runs on authoritative references: Pyth for public equities, PreStocks marks for pre-IPO.
-    const authoritative = legs.every((l) => l.src === "pyth" || l.src === "prestocks");
+    // Live switching only runs on trusted references: Pyth or Finnhub (cross-checked) for public equities, PreStocks marks for pre-IPO.
+    const authoritative = legs.every((l) => l.src === "pyth" || l.src === "prestocks" || l.src === "finnhub");
     checks.push({
       id: "source",
       label: "Trusted reference prices",
       ok: authoritative || mode === "paper",
       detail:
         legs.map((l) => `${l.t}: ${srcLabel(l)}`).join(" · ") +
-        (authoritative ? "" : mode === "paper" ? " (paper only)" : " - live needs Pyth or PreStocks prices"),
+        (authoritative ? "" : mode === "paper" ? " (paper only)" : ", live needs a real-time reference"),
     });
 
     const ages = legs.map((l) => (l.ref ? age(l.ref.publishTime) : Infinity));
@@ -94,6 +96,8 @@ export class Engine {
       detail: legs.map((l, i) => `${l.t} ${Number.isFinite(ages[i]) ? fmtAge(ages[i]) : "n/a"}`).join(" · ") + ` (max ${fmtAge(Math.max(...legs.map(maxAge)))})`,
     });
 
+    const agree = this.agreeCheck(legs.map((l) => l.t));
+    if (agree) checks.push(agree);
     const equityLegs = legs.filter((l) => l.kind === "xstock");
     if (equityLegs.length) {
       const closed = equityLegs.filter((l) => l.q.marketOpen === false);
@@ -159,6 +163,26 @@ export class Engine {
     const paused = legs.filter((l) => l.q.paused).map((l) => l.t);
     checks.push({ id: "paused", label: "Tokens not paused", ok: paused.length === 0, detail: paused.length ? `${paused.join(", ")} paused by issuer` : "Transfers enabled" });
     return checks;
+  }
+
+  /**
+   * Finnhub is one source; in market hours a second, independent one (Backed's price via Jupiter) must
+   * agree with it, or nothing fills. Off-hours both sit at a session close (Backed's may include
+   * pre-market), so the check doesn't apply. Undefined when no leg uses Finnhub.
+   */
+  private agreeCheck(tickers: string[]): Check | undefined {
+    const legs = tickers.filter((t) => this.prices.refSource(t) === "finnhub");
+    if (!legs.length) return undefined;
+    if (legs.every((t) => this.prices.quote(t).marketOpen === false))
+      return { id: "agree", label: "References agree", ok: true, detail: "Not checked while the market is closed" };
+    const parts = legs.map((t) => {
+      const f = this.prices.ref(t)!.price;
+      const b = this.prices.backedPrice(t);
+      if (!b) return { ok: false, text: `${t}: no Backed price to compare` };
+      const d = (f / b.price - 1) * 10_000;
+      return { ok: Math.abs(d) <= AGREE_BPS, text: `${t}: Finnhub $${f.toFixed(2)} vs Backed $${b.price.toFixed(2)} (${fmtBps(d)})` };
+    });
+    return { id: "agree", label: "References agree", ok: parts.every((p) => p.ok), detail: parts.map((p) => p.text).join(" · ") + ` (max ${AGREE_BPS} bps)` };
   }
 
   /**
@@ -521,14 +545,14 @@ export class Engine {
     const src = this.prices.refSource(spec.asset);
     const ref = this.prices.ref(spec.asset);
     const q = this.prices.quote(spec.asset);
-    const srcName = src === "pyth" ? "Pyth" : src === "prestocks" ? "PreStocks mark" : src === "jupiter" ? "Backed via Jupiter" : "loading";
-    const trusted = src === "pyth" || src === "prestocks";
+    const srcName = src === "pyth" ? "Pyth" : src === "prestocks" ? "PreStocks mark" : src === "finnhub" ? "Finnhub" : src === "jupiter" ? "Backed via Jupiter" : "loading";
+    const trusted = src === "pyth" || src === "prestocks" || src === "finnhub";
     const checks: Check[] = [
       {
         id: "source",
         label: "Trusted reference price",
         ok: trusted || mode === "paper",
-        detail: `${spec.asset}: ${srcName}` + (trusted ? "" : mode === "paper" ? " (paper only)" : " - live needs Pyth or PreStocks prices"),
+        detail: `${spec.asset}: ${srcName}` + (trusted ? "" : mode === "paper" ? " (paper only)" : ", live needs a real-time reference"),
       },
     ];
     const ageSec = ref ? age(ref.publishTime) : Infinity;
@@ -554,6 +578,8 @@ export class Engine {
         checks.push({ id: "confidence", label: "Pyth confidence tight", ok: conf <= limits.maxConfBps, detail: `±${Number.isFinite(conf) ? conf.toFixed(1) : "?"} bps (max ${limits.maxConfBps})` });
       }
     }
+    const agree = this.agreeCheck([spec.asset]);
+    if (agree) checks.push(agree);
     const corp = this.tokens.corporateActionNear(spec.asset, limits.corporateActionWindowHours);
     checks.push({
       id: "corporate",

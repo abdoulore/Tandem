@@ -14,7 +14,7 @@ const bps = (n?: number) => {
   return r === 0 ? "0 bps" : `${r > 0 ? "+" : ""}${r} bps`;
 };
 const pct = (n?: number) => (n === undefined ? "n/a" : `${n >= 0 ? "+" : ""}${(n / 100).toFixed(1)}%`);
-const srcLabel = (s?: string) => (s === "pyth" ? "Pyth" : s === "prestocks" ? "PreStocks" : s === "jupiter" ? "Backed via Jupiter" : "loading");
+const srcLabel = (s?: string) => (s === "pyth" ? "Pyth" : s === "prestocks" ? "PreStocks" : s === "finnhub" ? "Finnhub" : s === "jupiter" ? "Backed via Jupiter" : "loading");
 
 function Skeleton({ cols }: { cols: number }) {
   return (

@@ -27,8 +27,8 @@ const INITIAL: IntentDraft = {
   expiresInDays: 7,
 };
 
-const SOURCE_NAMES = { pyth: "Pyth", prestocks: "PreStocks marks", jupiter: "Backed via Jupiter" } as const;
-const ORDER = ["pyth", "prestocks", "jupiter"] as const;
+const SOURCE_NAMES = { pyth: "Pyth", prestocks: "PreStocks marks", finnhub: "Finnhub", jupiter: "Backed via Jupiter" } as const;
+const ORDER = ["pyth", "finnhub", "prestocks", "jupiter"] as const;
 
 /** Start from ?to= (and optionally ?from=, ?pct=, ?usd=) when arriving from Markets or the landing page. */
 function initialDraft(params: URLSearchParams): IntentDraft {

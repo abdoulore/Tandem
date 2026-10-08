@@ -11,7 +11,7 @@ import { useAppData } from "../state/AppData";
 import "./landing.css";
 
 const pct = (bps: number, d = 1) => `${bps >= 0 ? "+" : ""}${(bps / 100).toFixed(d)}%`;
-const SOURCE = { pyth: "Pyth", prestocks: "PreStocks mark", jupiter: "Backed" } as const;
+const SOURCE = { pyth: "Pyth", prestocks: "PreStocks mark", finnhub: "Finnhub", jupiter: "Backed" } as const;
 const SESSION = { regular: "US market open", extended: "Market closed", weekend: "Weekend", "24/7": "Trades 24/7" } as const;
 
 /** The hero's live example: a real fair-price buy, previewed on current prices. */

@@ -4,9 +4,9 @@ import { Lightning, Pulse } from "@phosphor-icons/react";
 import { useAppData } from "../state/AppData";
 import { BrandMark } from "./Brand";
 
-const SOURCE_SHORT = { pyth: "Pyth", prestocks: "PreStocks", jupiter: "Jupiter" } as const;
-const SOURCE_LONG = { pyth: "Pyth", prestocks: "PreStocks", jupiter: "Backed via Jupiter (paper mode)" } as const;
-const ORDER = ["pyth", "prestocks", "jupiter"] as const;
+const SOURCE_SHORT = { pyth: "Pyth", prestocks: "PreStocks", finnhub: "Finnhub", jupiter: "Jupiter" } as const;
+const SOURCE_LONG = { pyth: "Pyth", prestocks: "PreStocks", finnhub: "Finnhub, checked against Backed", jupiter: "Backed via Jupiter (paper mode)" } as const;
+const ORDER = ["pyth", "finnhub", "prestocks", "jupiter"] as const;
 
 export function AppShell() {
   const { status, readyCount } = useAppData();

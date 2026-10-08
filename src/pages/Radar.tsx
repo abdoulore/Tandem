@@ -14,7 +14,7 @@ type Summary = { from: number; to: number; rows: Row[] };
 type Point = { t: number; session: string; peg?: number };
 
 /** Short source names for the table; the footnote spells out what each one is. */
-const SOURCE = { pyth: "Pyth", prestocks: "PreStocks", jupiter: "Backed" } as const;
+const SOURCE = { pyth: "Pyth", prestocks: "PreStocks", finnhub: "Finnhub", jupiter: "Backed" } as const;
 const pct = (bps: number, d = 2) => `${bps >= 0 ? "+" : ""}${(bps / 100).toFixed(d)}%`;
 const age = (s: number) => (s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172_800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86_400)}d`);
 const median = (xs: number[]) => {

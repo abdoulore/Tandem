@@ -105,7 +105,8 @@ export type CheckId =
   | "delegation"
   | "quote"
   | "price"
-  | "cap";
+  | "cap"
+  | "agree";
 
 export interface Check {
   id: CheckId;
@@ -247,7 +248,7 @@ export interface Intent {
 }
 
 /** Where a price comes from: Pyth, PreStocks, or Jupiter (xStock market price plus Backed's stock price). */
-export type PriceSource = "pyth" | "prestocks" | "jupiter";
+export type PriceSource = "pyth" | "prestocks" | "finnhub" | "jupiter";
 
 /** Tickers grouped by the source of their reference price. */
 export type Coverage = Partial<Record<PriceSource, string[]>>;

@@ -2,7 +2,7 @@ import { CaretDown, CheckCircle, Clock, XCircle } from "@phosphor-icons/react";
 import type { Check, CheckId } from "../../shared/types";
 
 const GROUPS: { title: "Reference data" | "Asset" | "Execution"; ids: CheckId[] }[] = [
-  { title: "Reference data", ids: ["source", "fresh", "market", "confidence"] },
+  { title: "Reference data", ids: ["source", "agree", "fresh", "market", "confidence"] },
   { title: "Asset", ids: ["price", "peg", "private", "corporate", "paused"] },
   { title: "Execution", ids: ["quote", "cap", "balance", "delegation"] },
 ];

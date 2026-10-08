@@ -16,6 +16,8 @@ function loadKeeper(): Keypair | undefined {
 export const config = {
   port: Number(process.env.PORT ?? 8787),
   pythApiKey: process.env.PYTH_API_KEY?.trim() || undefined,
+  /** Finnhub key: real-time US stock prices, the live reference for public stocks when Pyth is not available. */
+  finnhubKey: process.env.FINNHUB_API_KEY?.trim() || undefined,
   pythHermesUrl: (process.env.PYTH_HERMES_URL ?? "https://pyth.dourolabs.app/hermes").replace(/\/$/, ""),
   rpcUrl: process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com",
   jupiterUrl: (process.env.JUPITER_API_URL ?? "https://lite-api.jup.ag/swap/v1").replace(/\/$/, ""),
