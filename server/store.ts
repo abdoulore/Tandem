@@ -36,10 +36,10 @@ class Store {
     this.dirty = true;
   }
 
-  event(intent: Intent, kind: IntentEvent["kind"], message: string) {
+  event(intent: Intent, kind: IntentEvent["kind"], message: string, snapshot?: IntentEvent["snapshot"]) {
     const last = intent.events[intent.events.length - 1];
     if (last && last.message === message) return; // don't spam repeated blockers
-    intent.events.push({ at: Date.now(), kind, message });
+    intent.events.push({ at: Date.now(), kind, message, ...(snapshot ? { snapshot } : {}) });
     if (intent.events.length > MAX_EVENTS) intent.events.splice(0, intent.events.length - MAX_EVENTS);
     this.dirty = true;
   }

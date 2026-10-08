@@ -36,3 +36,8 @@
   .radar-strip { grid-template-columns: 1fr; }
   .radar-head { align-items: flex-start; }
 }
+
+/* Proof */
+.proof-h { margin: 40px 0 12px; font-size: 20px; font-weight: 620; letter-spacing: -0.01em; }
+.refused { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--bad-soft); color: var(--bad); margin-right: 4px; }
+.radar-table small.detail { display: block; max-width: 46ch; color: var(--ink-2); font-size: 12.5px; margin: 0; }

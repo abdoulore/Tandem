@@ -3,6 +3,7 @@ import { AppShell } from "./components/AppShell";
 import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { Order } from "./pages/Order";
+import { Proof } from "./pages/Proof";
 import { Radar } from "./pages/Radar";
 import { Switches } from "./pages/Switches";
 import { AppDataProvider } from "./state/AppData";
@@ -19,6 +20,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/radar" element={<Radar />} />
+        <Route path="/proof" element={<Proof />} />
         <Route path="/app" element={<AppShell />}>
           <Route index element={<Order />} />
           <Route path="orders" element={<Switches />} />

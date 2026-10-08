@@ -19,6 +19,8 @@ const READY_GRACE_MS = 120_000;
 const FAIR_QUOTE_MS = 20_000;
 /** Off-hours, the reference is the last regular-session print: allow one that covers weekends and holidays. */
 const OFF_HOURS_REF_MAX_SEC = 100 * 3600;
+/** The same refusal on the same order is logged at most this often. */
+const REFUSAL_EVERY_MS = 10 * 60_000;
 
 /** A fill refused because the price moved past the user's limit. Not a failure: the order keeps watching. */
 class Refusal extends Error {}
@@ -40,6 +42,7 @@ export class Engine {
   private attempts = new Map<string, number>();
   private fairQuotes = new Map<string, FairQuote>();
   private fairPics = new Map<string, FairPicture>();
+  private lastRefusal = new Map<string, number>();
   private busy = false;
 
   constructor(
@@ -620,7 +623,7 @@ export class Engine {
       }
       return;
     }
-    if (met && failing) store.event(intent, "warn", `Refused: ${failing.label}: ${failing.detail}`);
+    if (met && failing) this.refuse(intent, failing.id, `${failing.label}: ${failing.detail}`, pic);
     if (met && !failing && streak < intent.limits.confirmations)
       store.event(intent, "info", `Price within your limit (${streak}/${intent.limits.confirmations} quotes)`);
     if (met && !failing && streak >= intent.limits.confirmations && q && pic) await this.executeFair(intent, q, pic);
@@ -644,6 +647,18 @@ export class Engine {
     if (slip < 1) throw new Refusal("Price vs real stock: no room left under your limit");
     const fresh = await this.quoteFair(spec.side, spec.asset, BigInt(intent.amountRaw), intent.style, slip, true);
     return { fresh, pic: this.fairPicture(spec, fresh.eff) ?? pic, slip };
+  }
+
+  /**
+   * Log a refusal with the price picture behind it (these feed /proof). Detail text changes every tick,
+   * so the same check on the same order is logged at most every REFUSAL_EVERY_MS.
+   */
+  private refuse(intent: Intent, key: string, message: string, pic?: FairPicture, always = false) {
+    const k = `${intent.id}|${key}`;
+    if (!always && Date.now() - (this.lastRefusal.get(k) ?? 0) < REFUSAL_EVERY_MS) return;
+    this.lastRefusal.set(k, Date.now());
+    const snapshot = pic ? { price: pic.ref.price, source: pic.ref.source, ageSec: pic.ref.ageSec, premiumBps: Math.round(pic.premiumBps * 10) / 10, session: pic.session } : undefined;
+    store.event(intent, "warn", `Refused: ${message}`, snapshot);
   }
 
   private fairFill(intent: Intent, pic: FairPicture, inUi: number, outUi: number): FairFill {
@@ -717,7 +732,7 @@ export class Engine {
         // Not a failure: the price moved past the limit between the check and the fill. Back to watching.
         intent.status = "armed";
         intent.lastEval = { ...intent.lastEval!, streak: 0, conditionMet: false };
-        store.event(intent, "warn", `Refused: ${msg}`);
+        this.refuse(intent, "moved", msg, intent.lastEval?.fair, true);
       } else {
         const n = (this.attempts.get(intent.id) ?? 0) + 1;
         this.attempts.set(intent.id, n);
@@ -741,14 +756,14 @@ export class Engine {
   private async buildConfirmTxFair(intent: Intent): Promise<{ tx: string; quote: QuoteSummary }> {
     if (intent.status !== "ready") throw new Error("This order is not ready");
     const { fresh, pic } = await this.limitQuote(intent).catch((e) => {
-      if (e instanceof Refusal) store.event(intent, "warn", `Refused: ${e.message}`);
+      if (e instanceof Refusal) this.refuse(intent, "moved", e.message, intent.lastEval?.fair, true);
       throw e;
     });
     const checks = this.fairChecks(intent.fair!, pic, intent.limits, intent.mode);
     checks.push(await this.balanceCheck(intent, true), this.quoteCheck(fresh.summary, intent.limits));
     const failing = checks.find((c) => !c.ok);
     if (failing) {
-      store.event(intent, "warn", `Refused: ${failing.label}: ${failing.detail}`);
+      this.refuse(intent, failing.id, `${failing.label}: ${failing.detail}`, pic, true);
       throw new Error(`${failing.label}: ${failing.detail}`);
     }
     const tx = await getSwapTransaction(fresh.raw, intent.owner);

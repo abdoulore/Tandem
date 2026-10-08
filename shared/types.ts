@@ -206,6 +206,8 @@ export interface IntentEvent {
   at: number;
   kind: "info" | "warn" | "success" | "error";
   message: string;
+  /** Refusals: the price picture at the moment the order was refused. */
+  snapshot?: { price: number; source?: PriceSource; ageSec: number; premiumBps?: number; session?: string };
 }
 
 export interface Intent {

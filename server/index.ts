@@ -587,6 +587,68 @@ app.get(
   }),
 );
 
+// ---- proof ---------------------------------------------------------------------------
+
+// Public record: every live order that settled on mainnet, and the latest refusals (paper and live).
+// Owners are shortened to their first and last 4 characters; paper users are not identified.
+const shortOwner = (o: string) => (o.startsWith("guest:") ? "paper user" : `${o.slice(0, 4)}...${o.slice(-4)}`);
+const orderLabel = (i: Intent) => (i.kind === "fair" && i.fair ? `${i.fair.side === "buy" ? "Buy" : "Sell"} ${i.fair.asset}` : `Switch ${i.from} into ${i.to}`);
+let proofCache: { at: number; body: unknown } | undefined;
+app.get(
+  "/api/proof",
+  route(() => {
+    if (proofCache && Date.now() - proofCache.at < 30_000) return proofCache.body;
+    const all = store.all();
+    const fills = all
+      .filter((i) => i.mode === "live" && i.status === "executed" && i.execution?.signature)
+      .map((i) => {
+        const x = i.execution!;
+        const usd = x.fair ? (x.fair.side === "buy" ? x.inUi : x.outUi) : i.sizing.kind === "usd" ? i.sizing.usd : undefined;
+        return {
+          at: x.at,
+          kind: i.kind,
+          order: orderLabel(i),
+          owner: shortOwner(i.owner),
+          usd,
+          session: x.fair?.session,
+          refPrice: x.fair?.ref.price,
+          refSource: x.fair?.ref.source,
+          effPrice: x.fair?.effPrice,
+          premiumBps: x.fair?.premiumBps,
+          inUi: x.inUi,
+          outUi: x.outUi,
+          from: i.from,
+          to: i.to,
+          signature: x.signature,
+        };
+      })
+      .sort((a, b) => b.at - a.at);
+    const refusals = all
+      .flatMap((i) =>
+        i.events
+          .filter((e) => e.message.startsWith("Refused: "))
+          .map((e) => {
+            const body = e.message.slice("Refused: ".length);
+            const cut = body.indexOf(": ");
+            return {
+              at: e.at,
+              order: orderLabel(i),
+              mode: i.mode,
+              owner: shortOwner(i.owner),
+              check: cut > 0 ? body.slice(0, cut) : body,
+              detail: cut > 0 ? body.slice(cut + 2) : "",
+              snapshot: e.snapshot,
+            };
+          }),
+      )
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 50);
+    const body = { fills, refusals };
+    proofCache = { at: Date.now(), body };
+    return body;
+  }),
+);
+
 // ---- Telegram alerts -------------------------------------------------------------
 
 const isGuest = (o: unknown): o is string => typeof o === "string" && /^guest:[\w-]{4,64}$/.test(o);
