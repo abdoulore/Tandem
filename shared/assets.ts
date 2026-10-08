@@ -11,6 +11,15 @@
 
 export type AssetKind = "xstock" | "prestock";
 
+/** Where a PreStocks company is in its life: still private, or listed with tokens converting to the public stock. */
+export interface Lifecycle {
+  stage: "private" | "listed_converting";
+  listedAs?: string;
+  /** ISO time after which unconverted tokens expire. */
+  convertBy?: string;
+  source?: string;
+}
+
 export interface Asset {
   ticker: string;
   name: string;
@@ -20,6 +29,7 @@ export interface Asset {
   feeds: { ref: string; token: string; rate: string };
   aliases: string[];
   image?: string;
+  lifecycle?: Lifecycle;
 }
 
 const RAW: Omit<Asset, "aliases" | "kind">[] = [
@@ -38,10 +48,12 @@ const RAW: Omit<Asset, "aliases" | "kind">[] = [
   { ticker: "HOOD", name: "Robinhood", mint: "XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg", decimals: 8, feeds: { ref: "306736a4035846ba15a3496eed57225b64cc19230a50d14f3ed20fd7219b7849", token: "dd49a9ac6df5cbfa9d8fc6371f7ae927a74d5c6763c1c01b4220d70314c647f9", rate: "d88c382daa11f3a377796bc3f9318e7fbffd69c5bbceb5e58548670a7ad23e7f" } },
 ];
 
-const PRE: { ticker: string; name: string; mint: string; image: string }[] = [
+const PRE: { ticker: string; name: string; mint: string; image: string; lifecycle?: Lifecycle }[] = [
   { ticker: "OPENAI", name: "OpenAI", mint: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF", image: "https://prestocks.com/logos/openai.png" },
   { ticker: "ANTHROPIC", name: "Anthropic", mint: "Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw", image: "https://prestocks.com/logos/anthropic.png" },
-  { ticker: "SPACEX", name: "SpaceX", mint: "PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh", image: "https://prestocks.com/logos/spacex.png" },
+  { ticker: "SPACEX", name: "SpaceX", mint: "PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh", image: "https://prestocks.com/logos/spacex.png",
+    // Listed on Nasdaq in June 2026. Tokens convert to the public stock and expire if not converted in time.
+    lifecycle: { stage: "listed_converting", listedAs: "SPCX", convertBy: "2027-03-12T23:59:00Z", source: "https://defillama.com/rwa/asset/SPACEX" } },
   { ticker: "ANDURIL", name: "Anduril", mint: "PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB", image: "https://prestocks.com/logos/anduril.png" },
   { ticker: "NEURALINK", name: "Neuralink", mint: "PrekqLJvJ3qVdXmBGDiexvwUTF4rLFDa6HWS4HJbw9S", image: "https://prestocks.com/logos/neuralink.png" },
   { ticker: "FIGUREAI", name: "Figure AI", mint: "PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd", image: "https://prestocks.com/logos/figureai.png" },
@@ -89,6 +101,16 @@ export const ASSETS: Asset[] = [
 export const PYTH_FEED_IDS = ASSETS.filter((a) => a.kind === "xstock").flatMap((a) => [a.feeds.ref, a.feeds.token, a.feeds.rate]);
 
 export const ASSET_BY_TICKER: Record<string, Asset> = Object.fromEntries(ASSETS.map((a) => [a.ticker, a]));
+
+/** "Listed on Nasdaq as SPCX. Convert by Mar 12, 2027." for assets past their pre-IPO stage, else undefined. */
+export function lifecycleNote(a: Asset | undefined): string | undefined {
+  const l = a?.lifecycle;
+  if (l?.stage !== "listed_converting") return undefined;
+  const by = l.convertBy && new Date(l.convertBy).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return `Listed on Nasdaq as ${l.listedAs}.${by ? ` Convert by ${by}.` : ""}`;
+}
+
+export const isConverting = (ticker: string) => ASSET_BY_TICKER[ticker]?.lifecycle?.stage === "listed_converting";
 
 export function tokenSymbol(ticker: string): string {
   const a = ASSET_BY_TICKER[ticker];

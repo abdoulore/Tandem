@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ASSET_BY_TICKER } from "../../shared/assets";
+import { ASSET_BY_TICKER, lifecycleNote } from "../../shared/assets";
 import type { AssetQuote } from "../../shared/types";
 import { Logo } from "../components/Logo";
 import { MarketTable } from "../components/MarketTable";
@@ -14,8 +14,41 @@ const age = (t?: number) => {
   return s < 90 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
 };
 
+/** A PreStocks company that has listed: no private mark any more, only the token and its conversion deadline. */
+function ConvertingCard({ q }: { q: AssetQuote }) {
+  const asset = ASSET_BY_TICKER[q.ticker];
+  return (
+    <div className="pm-card">
+      <div className="pm-head">
+        <Logo asset={asset} size={32} />
+        <div>
+          <div className="pm-name">{asset.name}</div>
+          <div className="pm-sub">{q.ticker}</div>
+        </div>
+      </div>
+      <div className="pm-prem">
+        <span className="num">{asset.lifecycle?.listedAs}</span>
+        <span className="pm-prem-label">listed on Nasdaq</span>
+      </div>
+      <p className="pm-note">{lifecycleNote(asset)} PreStocks no longer publishes a mark, so switches with it are paused.</p>
+      <dl className="pm-facts">
+        <div>
+          <dt>Token price</dt>
+          <dd className="num">{usd(q.dex ?? q.token?.price)}</dd>
+        </div>
+      </dl>
+      <div className="pm-foot">
+        <a className="muted" href={asset.lifecycle?.source} target="_blank" rel="noreferrer">
+          Source
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function PrivateCard({ q, onCreate }: { q: AssetQuote; onCreate: () => void }) {
   const asset = ASSET_BY_TICKER[q.ticker];
+  if (asset.lifecycle?.stage === "listed_converting") return <ConvertingCard q={q} />;
   const above = (q.pegBps ?? 0) >= 0;
   return (
     <div className="pm-card">

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Logo } from "../components/Logo";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle, Clock, XCircle } from "@phosphor-icons/react";
-import { ASSETS, type Asset } from "../../shared/assets";
+import { ASSETS, isConverting, lifecycleNote, type Asset } from "../../shared/assets";
 import type { AssetQuote, Check } from "../../shared/types";
 import { api, type Preview } from "../api";
 import { BrandMark } from "../components/Brand";
@@ -154,7 +154,7 @@ const LIVE_TX = "https://solscan.io/tx/2LxBEz5pmcL9BZkjmuYY3xVtZ5ZieLm9jNZUv4AEU
 const PROOF: { path: string; pair: string; result: string; href?: string }[] = [
   { path: "Live, one tap", pair: "OpenAI to Anthropic", result: "Triggered by the engine, confirmed from a wallet, settled in one transaction", href: LIVE_TX },
   { path: "Simulated, one tap", pair: "OpenAI to Anthropic", result: "Output matched the fee-adjusted quote to within 0.001%" },
-  { path: "Simulated, automatic", pair: "Tesla to SpaceX", result: "Public into pre-IPO, new token account opened in the same transaction" },
+  { path: "Simulated, automatic", pair: "Tesla to SpaceX", result: "Public stock into a PreStocks token, new token account opened in the same transaction" },
   { path: "Simulated, automatic", pair: "S&P 500 to NVIDIA", result: "One atomic transaction: 968 bytes, 140k compute units" },
 ];
 
@@ -212,9 +212,11 @@ export function Landing() {
   const navigate = useNavigate();
   useReveal([Boolean(market)]);
 
-  const pre = market?.assets.filter((a) => a.kind === "prestock") ?? [];
+  // Companies that have listed no longer have a private mark, so they leave the pre-IPO views.
+  const pre = market?.assets.filter((a) => a.kind === "prestock" && !isConverting(a.ticker)) ?? [];
   const pub = ASSETS.filter((a) => a.kind === "xstock");
-  const priv = ASSETS.filter((a) => a.kind === "prestock");
+  const priv = ASSETS.filter((a) => a.kind === "prestock" && !isConverting(a.ticker));
+  const converting = ASSETS.filter((a) => isConverting(a.ticker));
 
   return (
     <div className="landing">
@@ -384,7 +386,7 @@ export function Landing() {
         <section className="l-wrap l-section reveal">
           <div className="section-lead">
             <h2>21 assets. Mix private and public.</h2>
-            <p>Switch between any two: OpenAI into Anthropic, Tesla into SpaceX, the S&amp;P 500 into NVIDIA.</p>
+            <p>Switch between any two: OpenAI into Anthropic, Tesla into OpenAI, the S&amp;P 500 into NVIDIA.</p>
           </div>
           <div className="coverage">
             <div>
@@ -397,6 +399,11 @@ export function Landing() {
                   </span>
                 ))}
               </div>
+              {converting.map((a) => (
+                <p className="muted converting-note" key={a.ticker}>
+                  <Logo asset={a} size={16} /> {a.name}: {lifecycleNote(a)}
+                </p>
+              ))}
             </div>
             <div>
               <h3>Public stocks, via Backed xStocks</h3>

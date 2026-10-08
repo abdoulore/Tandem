@@ -452,3 +452,6 @@ details.advanced.limits-line summary { font-weight: 400; color: var(--ink-3); li
   .alerts-row > .btn { width: 100%; justify-content: center; }
   .alerts-row > .badge { margin-left: 38px; }
 }
+
+/* PreStocks companies that have listed */
+.pm-note { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.45; }

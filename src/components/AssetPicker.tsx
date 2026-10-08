@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { CaretDown, MagnifyingGlass } from "@phosphor-icons/react";
-import { ASSETS, ASSET_BY_TICKER } from "../../shared/assets";
+import { ASSETS, ASSET_BY_TICKER, lifecycleNote, type Asset } from "../../shared/assets";
 import type { MarketSnapshot } from "../../shared/types";
 import { Logo } from "./Logo";
 
-const GROUPS = [
-  { kind: "prestock", label: "Pre-IPO, via PreStocks" },
-  { kind: "xstock", label: "Public stocks, via xStocks" },
-] as const;
+const converting = (a: Asset) => a.lifecycle?.stage === "listed_converting";
+const GROUPS: { key: string; label: string; has: (a: Asset) => boolean }[] = [
+  { key: "pre", label: "Pre-IPO, via PreStocks", has: (a) => a.kind === "prestock" && !converting(a) },
+  { key: "pub", label: "Public stocks, via xStocks", has: (a) => a.kind === "xstock" },
+  { key: "conv", label: "Listed, converting (PreStocks)", has: converting },
+];
 
-const kindLabel = (kind: string) => (kind === "prestock" ? "Pre-IPO" : "Public stock");
+const kindLabel = (a: Asset) => (converting(a) ? `Listed as ${a.lifecycle?.listedAs}` : a.kind === "prestock" ? "Pre-IPO" : "Public stock");
 const prem = (bps?: number) => (bps === undefined ? "" : `${bps >= 0 ? "+" : ""}${(bps / 100).toFixed(1)}%`);
 
 interface Props {
@@ -65,7 +67,7 @@ export function AssetPicker({ id, value, onChange, other, market }: Props) {
         <span className="pb-text">
           <span className="pb-name">{asset.name}</span>
           <span className="pb-sub">
-            {kindLabel(asset.kind)} · {asset.ticker}
+            {kindLabel(asset)} · {asset.ticker}
           </span>
         </span>
         <CaretDown size={14} weight="bold" className="pb-caret" />
@@ -78,10 +80,10 @@ export function AssetPicker({ id, value, onChange, other, market }: Props) {
           </label>
           <div className="picker-list" role="listbox" aria-labelledby={id}>
             {GROUPS.map((g) => {
-              const items = ASSETS.filter((a) => a.kind === g.kind && match(a.ticker));
+              const items = ASSETS.filter((a) => g.has(a) && match(a.ticker));
               if (!items.length) return null;
               return (
-                <div key={g.kind}>
+                <div key={g.key}>
                   <div className="picker-group">{g.label}</div>
                   {items.map((a) => {
                     const peg = market?.assets.find((x) => x.ticker === a.ticker)?.pegBps;
@@ -101,7 +103,7 @@ export function AssetPicker({ id, value, onChange, other, market }: Props) {
                         <Logo asset={a} size={24} />
                         <span className="po-name">{a.name}</span>
                         <span className="po-tick">{a.ticker}</span>
-                        <span className="po-prem num">{prem(peg)}</span>
+                        <span className="po-prem num" title={lifecycleNote(a)}>{converting(a) ? a.lifecycle?.listedAs : prem(peg)}</span>
                       </button>
                     );
                   })}

@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { ASSETS, ASSET_BY_TICKER, getAsset, tokenSymbol } from "../shared/assets";
+import { ASSETS, ASSET_BY_TICKER, getAsset, isConverting, tokenSymbol } from "../shared/assets";
 import { pairRatio, rawFromUi, sharesForSizing, triggerRatio, uiFromRaw } from "../shared/math";
 import { parseIntent } from "../shared/parser";
 import { DEFAULT_LIMITS, PRE_IPO_SLIPPAGE_BPS, canonicalDraft, type ExecStyle, type Intent, type IntentDraft, type Status } from "../shared/types";
@@ -57,6 +57,9 @@ function normalizeDraft(d: Partial<IntentDraft>): IntentDraft {
   if (!d.from || !ASSET_BY_TICKER[d.from]) throw new Error("Pick a stock to move out of");
   if (!d.to || !ASSET_BY_TICKER[d.to]) throw new Error("Pick a stock to move into");
   if (d.from === d.to) throw new Error("Source and target must differ");
+  // A company that listed has no live reference until its token-to-share price is verified; paper still runs.
+  for (const t of [d.from, d.to])
+    if (d.mode === "live" && isConverting(t)) throw new Error(`${ASSET_BY_TICKER[t].name} is converting to its listed stock. Live orders resume once the reference is verified.`);
   if (!d.sizing) throw new Error("Enter an amount");
   const amount = d.sizing.kind === "usd" ? d.sizing.usd : d.sizing.shares;
   if (!(amount > 0)) throw new Error("Amount must be positive");
@@ -79,6 +82,8 @@ function normalizeDraft(d: Partial<IntentDraft>): IntentDraft {
 function priceContext(d: IntentDraft) {
   const fromRef = prices.ref(d.from)?.price;
   const toRef = prices.ref(d.to)?.price;
+  for (const t of [d.from, d.to])
+    if (isConverting(t) && !prices.ref(t)) throw new Error(`${ASSET_BY_TICKER[t].name} has no reference price since it listed, so switches with it are paused.`);
   if (!fromRef || !toRef) throw new Error("Prices are still loading - try again in a moment");
   const src = getAsset(d.from);
   // USD amounts buy tokens at the market price, not the reference mark.
