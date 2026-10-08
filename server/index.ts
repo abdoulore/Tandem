@@ -265,6 +265,7 @@ app.post(
     const now = Date.now();
     const intent: Intent = {
       id: crypto.randomUUID().slice(0, 8),
+      kind: "switch",
       owner,
       createdAt: now,
       expiresAt: now + d.expiresInDays * 86_400_000,

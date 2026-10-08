@@ -6,7 +6,7 @@ import nacl from "tweetnacl";
 // can arm a switch against someone else's delegated tokens.
 const MAX_SKEW_MS = 5 * 60_000;
 
-export { cancelMessage, intentMessage, telegramMessage } from "../shared/messages";
+export { cancelMessage, fairMessage, intentMessage, telegramMessage } from "../shared/messages";
 
 export function verify(owner: string, message: string, signatureB58: string, ts: number): string | undefined {
   if (Math.abs(Date.now() - ts) > MAX_SKEW_MS) return "Signature expired - sign again";

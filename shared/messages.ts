@@ -3,6 +3,10 @@ export function intentMessage(owner: string, payload: unknown, ts: number): stri
   return `Tandem: authorize switch\nowner: ${owner}\nts: ${ts}\nintent: ${JSON.stringify(payload)}`;
 }
 
+export function fairMessage(owner: string, payload: unknown, ts: number): string {
+  return `Tandem: authorize order\nowner: ${owner}\nts: ${ts}\norder: ${JSON.stringify(payload)}`;
+}
+
 export function telegramMessage(owner: string, ts: number): string {
   return `Tandem: send my switch alerts to Telegram\nowner: ${owner}\nts: ${ts}`;
 }

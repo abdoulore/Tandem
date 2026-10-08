@@ -12,7 +12,7 @@ class Store {
 
   constructor() {
     try {
-      for (const i of JSON.parse(fs.readFileSync(FILE, "utf8")) as Intent[]) this.intents.set(i.id, i);
+      for (const i of JSON.parse(fs.readFileSync(FILE, "utf8")) as Intent[]) this.intents.set(i.id, { ...i, kind: i.kind ?? "switch" });
     } catch {
       /* first run */
     }

@@ -53,6 +53,39 @@ export interface IntentDraft {
   text?: string;
 }
 
+// ---- fair-price orders ---------------------------------------------------------
+// A buy or sell priced against the real stock: fill only while the effective price stays within
+// limitBps of the reference. Switches are the other order kind.
+
+export type OrderKind = "switch" | "fair";
+export type Side = "buy" | "sell";
+
+export interface FairDraft {
+  kind: "fair";
+  side: Side;
+  /** Ticker in ASSETS. */
+  asset: string;
+  sizing: Sizing;
+  /** Buy: max premium over the reference (negative = require a discount). Sell: max discount under it. Basis points. */
+  limitBps: number;
+  /** Fills while the US market is closed, priced against the last regular-session reference. Off unless the user opts in. */
+  offHours: { allowed: boolean; limitBps: number };
+  mode: Mode;
+  limits: Limits;
+  expiresInDays: number;
+  text?: string;
+}
+
+/** What an intent of kind "fair" stores on top of the shared intent fields. */
+export interface FairSpec {
+  side: Side;
+  asset: string;
+  limitBps: number;
+  offHours: { allowed: boolean; limitBps: number };
+}
+
+export const DEFAULT_FAIR: Pick<FairDraft, "limitBps" | "offHours"> = { limitBps: 50, offHours: { allowed: false, limitBps: 100 } };
+
 export interface ParseResult {
   draft: Partial<IntentDraft>;
   missing: string[];
@@ -154,6 +187,12 @@ export interface IntentEvent {
 
 export interface Intent {
   id: string;
+  /** Records saved before fair orders existed have no kind; the store loads them as "switch". */
+  kind: OrderKind;
+  /** Set when kind is "fair". For fair orders, from/to are the legs (USDC and the stock), and the
+   *  switch-only fields (direction, thresholdPct, baseline, triggerRatio) hold neutral values that
+   *  nothing reads: the engine routes on kind first. */
+  fair?: FairSpec;
   owner: string;
   createdAt: number;
   expiresAt: number;
@@ -229,6 +268,29 @@ export interface Status {
 }
 
 /** Exact object a wallet signs to authorize a live intent (fixed key order). */
+/** Exact object a wallet signs to authorize a fair-price order (fixed key order). */
+export function canonicalFairDraft(d: FairDraft) {
+  return {
+    kind: "fair" as const,
+    side: d.side,
+    asset: d.asset,
+    sizing: d.sizing.kind === "usd" ? { kind: "usd", usd: d.sizing.usd } : { kind: "shares", shares: d.sizing.shares },
+    limitBps: d.limitBps,
+    offHours: { allowed: d.offHours.allowed, limitBps: d.offHours.limitBps },
+    mode: d.mode,
+    limits: {
+      maxStalenessSec: d.limits.maxStalenessSec,
+      maxPegDeviationBps: d.limits.maxPegDeviationBps,
+      maxPrivatePremiumBps: d.limits.maxPrivatePremiumBps,
+      maxSlippageBps: d.limits.maxSlippageBps,
+      maxConfBps: d.limits.maxConfBps,
+      confirmations: d.limits.confirmations,
+      corporateActionWindowHours: d.limits.corporateActionWindowHours,
+    },
+    expiresInDays: d.expiresInDays,
+  };
+}
+
 export function canonicalDraft(d: IntentDraft) {
   return {
     from: d.from,
