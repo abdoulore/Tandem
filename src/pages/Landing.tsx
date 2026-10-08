@@ -80,7 +80,7 @@ function LiveOrder() {
 }
 
 const STEPS = [
-  { title: "Reference", body: "Every order is measured against the real price: Pyth or the issuer's stock price for public stocks, the PreStocks mark for pre-IPO. Each price shows its source and age." },
+  { title: "Reference", body: "Every order is measured against the real price: the stock's price from Finnhub, checked against the issuer's price, for public stocks, and the PreStocks mark for pre-IPO. Each price shows its source and age." },
   { title: "Checks", body: "Fresh reference, market session, token state and slippage after fees are checked on every quote. Off-hours fills only happen if you opt in." },
   { title: "Execution", body: "Jupiter routes the swap and Solana settles it in one transaction. Your limit becomes the on-chain minimum out, so a late price move can't fill past it." },
   { title: "Refusals", body: "When the price is past your limit or a check fails, Tandem does not fill. It records why, with the price it saw, on the public Proof page." },
@@ -89,7 +89,7 @@ const STEPS = [
 const FAQ = [
   {
     q: "What is the real price?",
-    a: "For a public stock, the stock's own price from Pyth or from the token's issuer, Backed. For a pre-IPO token, its PreStocks mark. Every price in the app shows where it came from and how old it is.",
+    a: "For a public stock, the stock's own price from Finnhub, which must agree with the issuer Backed's price within 0.5% before a live order fills in market hours. For a pre-IPO token, its PreStocks mark. Every price in the app shows where it came from and how old it is.",
   },
   {
     q: "What happens when the US market is closed?",
@@ -390,7 +390,7 @@ export function Landing() {
       <footer className="l-wrap l-foot">
         <div className="foot-row">
           <span>Tandem, on Solana</span>
-          <span className="muted">Prices from Pyth, Backed, PreStocks and Jupiter</span>
+          <span className="muted">Prices from Finnhub, Backed, PreStocks and Jupiter</span>
         </div>
         <p className="disclaimer">
           Not investment advice. xStocks and PreStocks are offered by their issuers outside the US, provide tokenized economic exposure, and may not confer

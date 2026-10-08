@@ -28,6 +28,7 @@ It covers **13 public stocks (Backed xStocks)** and **7 pre-IPO companies (PreSt
 | 2026-10-08 | [bceaa6f](https://github.com/abdoulore/Tandem/commit/bceaa6f) Fair-price order model · [4290713](https://github.com/abdoulore/Tandem/commit/4290713) engine · [f7180ac](https://github.com/abdoulore/Tandem/commit/f7180ac) API · [f02edde](https://github.com/abdoulore/Tandem/commit/f02edde) buy and sell forms |
 | 2026-10-08 | [7af1f66](https://github.com/abdoulore/Tandem/commit/7af1f66) Radar · [4304176](https://github.com/abdoulore/Tandem/commit/4304176) Proof · [9318542](https://github.com/abdoulore/Tandem/commit/9318542) trust panel · [a7a917c](https://github.com/abdoulore/Tandem/commit/a7a917c) lifecycle alerts |
 | 2026-10-08 | [8bb817b](https://github.com/abdoulore/Tandem/commit/8bb817b) Optional platform fee · [60f314d](https://github.com/abdoulore/Tandem/commit/60f314d) landing rewrite |
+| 2026-10-08 | [8b6483a](https://github.com/abdoulore/Tandem/commit/8b6483a) Finnhub stock reference, cross-checked against Backed |
 
 ## Why
 
@@ -69,14 +70,14 @@ Two corrections Tandem makes along the way: Jupiter's quotes leave out the Token
 
 Tandem logs every token against its real price every minute, and quotes a $100 buy of each one every five minutes (`server/drift.ts`). The [Radar](https://tandem.moonrider.online/radar) shows it live; `npm run drift:report -- --since 2026-10-09` prints medians, p90s and the share of time each token sits more than 0.5%, 1% and 2% from its reference, by US session. Figures for the full window, including the weekend, are added here after it closes.
 
-Off-hours, the "real price" is the last regular-session price; pre-market, after-hours and overnight prices are not included. In market hours, Backed's reference can lag the stock by a few minutes, and the Radar marks those rows.
+Off-hours, the "real price" is the last regular-session price; pre-market, after-hours and overnight prices are not included. In market hours, rows priced by Backed (data logged before Finnhub was added, or when Finnhub is unavailable) can lag the stock by a few minutes, and the Radar marks them.
 
 ## How it works
 
 1. **Order.** Buy or sell an amount in dollars or shares, with a limit: "pay at most 0.5% over the real price", or "sell for no less than 0.5% under". Off-hours fills are off unless you allow them, with their own limit.
-2. **Reference.** The real price is Pyth or the issuer's stock price for public stocks, and the PreStocks mark for pre-IPO tokens. Every price shows its source and age.
+2. **Reference.** The real price is the stock's price from Finnhub for public stocks, and the PreStocks mark for pre-IPO tokens. In market hours a live order also needs Finnhub to agree with the issuer Backed's price within 0.5%; if Finnhub is unavailable, live orders pause rather than run on one source. Every price shows its source and age.
 3. **Quote.** Every 20 seconds Tandem quotes your actual order size through Jupiter, after fees, and compares the effective price with the reference.
-4. **Checks.** The price must be within your limit on 3 separate quotes, and every check must pass: trusted and fresh reference (or, off-hours, a last real price under 100 hours old and your opt-in), Pyth confidence, no dividend or split in flight, token not paused, slippage within your limit after fees, funds approved, and the live cap.
+4. **Checks.** The price must be within your limit on 3 separate quotes, and every check must pass: trusted and fresh reference (or, off-hours, a last real price under 100 hours old and your opt-in), references in agreement, no dividend or split in flight, token not paused, slippage within your limit after fees, funds approved, and the live cap.
 5. **Execution.** Public stocks run automatically: you approve the exact amount once, and the keeper sends one atomic transaction that pulls it, swaps through Jupiter, and delivers the tokens to your wallet. Your limit is the swap's on-chain minimum out. Pre-IPO tokens charge 1% per transfer, so you confirm those yourself in one tap.
 6. **Refusals.** When the price moves past your limit or a check fails, Tandem does not fill, and logs the refusal with the price it saw.
 
@@ -105,7 +106,7 @@ browser (React + Solana wallet adapter)
    │  orders, previews, signed messages and transactions
    ▼
 server (Node + Express, one process)
-   ├─ prices.ts      Pyth Hermes (per-feed entitlement), PreStocks API, Jupiter prices, market hours
+   ├─ prices.ts      Finnhub stock prices, Backed prices via Jupiter, PreStocks API, Pyth Hermes (per-feed entitlement), market hours
    ├─ tokenState.ts  Token-2022 state: scaled-UI multiplier, pause flag, transfer fees
    ├─ engine.ts      switch and fair-price evaluation, checks, quotes, execution, refusals
    ├─ drift.ts       drift logger: every token vs its reference each minute, $100 quote probes
@@ -145,7 +146,8 @@ npx tsx scripts/check-dashes.ts                  # house style check
 
 | Variable | Purpose |
 |---|---|
-| `PYTH_API_KEY`, `PYTH_HERMES_URL` | Pyth Hermes access. Tandem detects which feeds the key can read |
+| `FINNHUB_API_KEY` | Finnhub stock prices, the live reference for public stocks |
+| `PYTH_API_KEY`, `PYTH_HERMES_URL` | Optional Pyth Hermes access. Tandem detects which feeds the key can read and prefers them |
 | `SOLANA_RPC_URL` | Mainnet RPC; use a private one in production |
 | `JUPITER_API_URL`, `JUPITER_API_KEY` | Jupiter swap API |
 | `KEEPER_SECRET_KEY` | Keeper wallet, created by `npm run keygen` |
@@ -158,7 +160,7 @@ npx tsx scripts/check-dashes.ts                  # house style check
 ## Roadmap
 
 - **On-chain order program** that verifies the reference price and enforces the swap and its recipient, so an approval can only execute the order it was given for.
-- **Pyth Pro session feeds**, so pre-market, after-hours and overnight orders use a live price rather than the last close.
+- **Session price feeds** (Pyth Pro or similar), so pre-market, after-hours and overnight orders use a live price rather than the last close.
 - **Issuer routing**: quote xStocks and Ondo tokens for the same stock against the same reference, and fill on the better one.
 - **Jupiter Swap V2** migration, which also allows fees on buys.
 - **A fair-price API** for wallets and lending markets that need to know whether a token trades at its stock's price.

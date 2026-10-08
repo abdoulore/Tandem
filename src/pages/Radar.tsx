@@ -97,7 +97,7 @@ export function Radar() {
     const when = `${now.toUTCString().slice(0, 11)}, ${now.toISOString().slice(11, 16)} UTC`;
     const closed = top.marketOpen === false;
     const vs = closed ? "its last close" : "the stock";
-    const src = top.sources?.ref === "pyth" ? "Pyth" : "Backed";
+    const src = SOURCE[top.sources?.ref ?? "jupiter"];
     const text = `${when}: ${tokenSymbol(top.ticker)} trades ${pct(Math.abs(top.pegBps!))} ${top.pegBps! >= 0 ? "over" : "under"} ${vs}. Tandem Radar, data from ${src} and Jupiter. ${location.origin}/radar`;
     navigator.clipboard
       .writeText(text)
@@ -234,8 +234,8 @@ export function Radar() {
         </div>
 
         <p className="radar-foot">
-          Premium is the token price on Solana against its real price: the Pyth or Backed stock price for public stocks, the PreStocks mark for pre-IPO. In market
-          hours Backed&apos;s reference can lag the stock by a few minutes, so those rows show ≈. Not investment advice.
+          Premium is the token price on Solana against its real price: the stock price from Finnhub for public stocks (Backed&apos;s price when Finnhub is unavailable), the PreStocks mark for
+          pre-IPO. Backed&apos;s price can lag the stock by a few minutes in market hours, so rows priced by it show ≈. Not investment advice.
         </p>
       </main>
     </div>
