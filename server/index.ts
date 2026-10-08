@@ -24,7 +24,7 @@ import {
 import { cancelMessage, fairMessage, intentMessage, telegramMessage, verify } from "./auth";
 import { config } from "./config";
 import { driftLastWriteAt, startDriftLogger } from "./drift";
-import { summarize, type DriftSummary } from "./driftStats";
+import { series, summarize, type DriftSummary, type SeriesPoint } from "./driftStats";
 import { Engine } from "./engine";
 import { PriceService } from "./prices";
 import { ata, buildApprovalTx, buildRevokeTx, conn, programId, submitSigned, tokenAccountState } from "./solana";
@@ -565,6 +565,24 @@ app.get(
     if (hit && Date.now() - hit.at < 60_000) return hit.body;
     const body = summarize(Math.floor(Date.now() / 1000) - hours * 3600);
     driftCache.set(hours, { at: Date.now(), body });
+    return body;
+  }),
+);
+
+// Premium history in buckets: one ticker at 5-minute resolution, or every ticker coarser for sparklines.
+const seriesCache = new Map<string, { at: number; body: Record<string, SeriesPoint[]> }>();
+app.get(
+  "/api/drift/series",
+  route((req) => {
+    const hours = Math.min(336, Math.max(1, Math.round(Number(req.query.hours) || 72)));
+    const ticker = req.query.ticker ? String(req.query.ticker).toUpperCase() : undefined;
+    if (ticker && !ASSET_BY_TICKER[ticker]) throw new Error("Unknown ticker");
+    const bucket = Math.min(7200, Math.max(300, Math.round(Number(req.query.bucket) || 300)));
+    const key = `${hours}|${bucket}|${ticker ?? "*"}`;
+    const hit = seriesCache.get(key);
+    if (hit && Date.now() - hit.at < 60_000) return hit.body;
+    const body = series(Math.floor(Date.now() / 1000) - hours * 3600, bucket, ticker);
+    seriesCache.set(key, { at: Date.now(), body });
     return body;
   }),
 );
