@@ -238,6 +238,11 @@ export class PriceService {
     }
   }
 
+  /** Pyth feeds this key can read, out of all the feeds Tandem asks for. */
+  pythEntitlement() {
+    return { readable: this.entitled.size, total: ALL_FEED_IDS.length };
+  }
+
   /** Where the token actually trades on Solana right now (Jupiter), if fresh. */
   dexPrice(ticker: string): number | undefined {
     const d = this.dex.get(ticker);

@@ -11,7 +11,7 @@ import { parseIntent } from "../shared/parser";
 import { DEFAULT_LIMITS, PRE_IPO_SLIPPAGE_BPS, canonicalDraft, type ExecStyle, type Intent, type IntentDraft, type Status } from "../shared/types";
 import { cancelMessage, intentMessage, telegramMessage, verify } from "./auth";
 import { config } from "./config";
-import { startDriftLogger } from "./drift";
+import { driftLastWriteAt, startDriftLogger } from "./drift";
 import { summarize, type DriftSummary } from "./driftStats";
 import { Engine } from "./engine";
 import { PriceService } from "./prices";
@@ -128,6 +128,30 @@ app.get(
       liveBlockers: blockers,
       keeper,
       rpc: new URL(config.rpcUrl).host,
+    };
+  }),
+);
+
+// Cheap liveness for monitors: no RPC call per request (the keeper balance is cached for a minute).
+const startedAt = Date.now();
+let keeperSol = { at: 0, sol: 0 };
+app.get(
+  "/api/health",
+  route(async () => {
+    if (config.keeper && Date.now() - keeperSol.at > 60_000) {
+      const lamports = await conn.getBalance(config.keeper.publicKey).catch(() => 0);
+      keeperSol = { at: Date.now(), sol: lamports / LAMPORTS_PER_SOL };
+    }
+    const pyth = prices.pythEntitlement();
+    return {
+      ok: prices.updatedAt > 0 && Date.now() - prices.updatedAt < 120_000,
+      uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+      pricesUpdatedAt: prices.updatedAt || null,
+      priceSource: prices.source,
+      pythFeeds: `${pyth.readable}/${pyth.total}`,
+      driftLastWriteAt: driftLastWriteAt || null,
+      liveEnabled: config.liveExecution,
+      autoEnabled: config.liveExecution && !!config.keeper && keeperSol.sol >= 0.005,
     };
   }),
 );
