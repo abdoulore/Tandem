@@ -52,6 +52,7 @@ function FairReceipt({ i }: { i: Intent }) {
           {x.expectedOutUi !== undefined && <Row k="Expected output" v={<span className="num">{fmtNum(x.expectedOutUi)} {tokenSymbol(i.to)}</span>} />}
           <Row k={x.paper ? "Simulated output" : "Actual output"} v={<span className="num">{fmtNum(x.outUi)} {tokenSymbol(i.to)}</span>} />
           {x.feeBps !== undefined && <Row k="Transfer fees" v={x.feeBps > 0 ? `${(x.feeBps / 100).toFixed(1)}%` : "none"} />}
+          {!!x.platformFeeBps && <Row k="Tandem fee" v={`${(x.platformFeeBps / 100).toFixed(2)}%, in USDC`} />}
           <Row k="Route" v={x.route} />
         </dl>
       </section>

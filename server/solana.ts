@@ -91,12 +91,12 @@ export async function buildFullRevokeTx(owner: PublicKey, ticker: string) {
  *   3. output lands directly in the owner's target-stock account
  * All-or-nothing: if the swap can't meet its minimum, the pull reverts too.
  */
-export async function switchInstructions(keeper: PublicKey, owner: PublicKey, from: string, to: string, amountRaw: bigint, quote: JupQuote) {
+export async function switchInstructions(keeper: PublicKey, owner: PublicKey, from: string, to: string, amountRaw: bigint, quote: JupQuote, feeAccount?: PublicKey) {
   const src = legAsset(from);
   const dst = legAsset(to);
   const keeperSrc = ata(keeper, src.mint);
   const ownerDst = ata(owner, dst.mint);
-  const jup = await getSwapInstructions(conn, quote, keeper, ownerDst);
+  const jup = await getSwapInstructions(conn, quote, keeper, ownerDst, feeAccount);
   // Jupiter sizes the compute limit for its swap alone; the account creation and the keeper's pull
   // run in the same transaction, so give the limit room for them.
   const budget = jup.computeBudget.map((ix) =>
@@ -117,8 +117,8 @@ export async function switchInstructions(keeper: PublicKey, owner: PublicKey, fr
   return { ixs, alts: jup.alts, ownerDst };
 }
 
-export async function buildSwitchTx(keeper: Keypair, owner: PublicKey, from: string, to: string, amountRaw: bigint, quote: JupQuote) {
-  const { ixs, alts, ownerDst } = await switchInstructions(keeper.publicKey, owner, from, to, amountRaw, quote);
+export async function buildSwitchTx(keeper: Keypair, owner: PublicKey, from: string, to: string, amountRaw: bigint, quote: JupQuote, feeAccount?: PublicKey) {
+  const { ixs, alts, ownerDst } = await switchInstructions(keeper.publicKey, owner, from, to, amountRaw, quote, feeAccount);
   const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash();
   const msg = new TransactionMessage({ payerKey: keeper.publicKey, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message(alts);
   const tx = new VersionedTransaction(msg);

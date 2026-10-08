@@ -456,7 +456,7 @@ export class Engine {
       ...(q && intent.kind !== "fair" ? this.receiptExtras(intent, q) : {}),
     };
     const pic = this.fairPics.get(intent.id);
-    if (intent.kind === "fair" && q && pic) intent.execution = { ...intent.execution, feeBps: q.feeBps, expectedOutUi: q.outUi, fair: this.fairFill(intent, pic, q.inUi, outUi) };
+    if (intent.kind === "fair" && q && pic) intent.execution = { ...intent.execution, feeBps: q.feeBps, platformFeeBps: q.platformFeeBps, expectedOutUi: q.outUi, fair: this.fairFill(intent, pic, q.inUi, outUi) };
     store.event(intent, "success", `Confirmed: ${fmtNum(intent.execution.inUi)} ${intent.from} -> ${fmtNum(outUi)} ${intent.to}`);
     store.touch();
   }
@@ -474,7 +474,10 @@ export class Engine {
     // A sell pays the stock's transfer fee on the way into the pool, which Jupiter's quote leaves out (see quoteSwitch).
     const srcFeeBps = side === "sell" ? this.tokens.feeBps(asset) : 0;
     const pullFee = pull && side === "sell" ? this.tokens.feeFor(asset, amountRaw) : 0n;
-    const raw = await getQuote(from.mint, to.mint, amountRaw - pullFee, slippageBps + srcFeeBps, fresh);
+    // Tandem's fee, when on, comes out of the USDC a sell receives, so it is already inside outAmount and the
+    // effective price. Buys carry no fee for now: Jupiter v1 rejects a USDC input fee into a Token-2022 output (6014).
+    const platformFee = side === "sell" ? config.platformFeeBps : 0;
+    const raw = await getQuote(from.mint, to.mint, amountRaw - pullFee, slippageBps + srcFeeBps, fresh, platformFee);
     const inUi = uiFromRaw(amountRaw, from.decimals, side === "sell" ? mult : 1);
     const outUi = uiFromRaw(raw.outAmount, to.decimals, side === "buy" ? mult : 1) * (1 - srcFeeBps / 10_000);
     const dex = this.prices.dexPrice(asset) ?? this.prices.token(asset)?.price;
@@ -488,6 +491,7 @@ export class Engine {
       fairOutUi,
       shortfallBps: shortfallBps(outUi, fairOutUi * feeFactor),
       feeBps: (1 - feeFactor) * 10_000,
+      platformFeeBps: platformFee,
       priceImpactPct: Number(raw.priceImpactPct) * 100,
       route: routeLabel(raw),
     };
@@ -679,6 +683,7 @@ export class Engine {
         ...pick(q.summary),
         feeBps: q.summary.feeBps,
         expectedOutUi: q.summary.outUi,
+        platformFeeBps: q.summary.platformFeeBps,
         fair: this.fairFill(intent, pic, q.summary.inUi, q.summary.outUi),
       };
       store.event(intent, "success", `Paper: ${verb.toLowerCase()} ${spec.asset} at $${q.eff.toFixed(2)} vs $${pic.ref.price.toFixed(2)} real (${fmtBps(pic.premiumBps)})`);
@@ -706,7 +711,7 @@ export class Engine {
       if (!delegation.ok) throw new Error(delegation.detail);
       const { fresh, pic: now } = await this.limitQuote(intent);
       const owner = new PublicKey(intent.owner);
-      const { tx, blockhash, lastValidBlockHeight, ownerDst } = await buildSwitchTx(config.keeper, owner, intent.from, intent.to, BigInt(intent.amountRaw), fresh.raw);
+      const { tx, blockhash, lastValidBlockHeight, ownerDst } = await buildSwitchTx(config.keeper, owner, intent.from, intent.to, BigInt(intent.amountRaw), fresh.raw, feeAccount(intent));
       const sig = await sendAndConfirm(tx, blockhash, lastValidBlockHeight);
       const dst = legAsset(intent.to);
       const got = await receivedRaw(sig, ownerDst);
@@ -723,6 +728,7 @@ export class Engine {
         shortfallBps: netShortfall(outUi, fresh.summary),
         feeBps: fresh.summary.feeBps,
         expectedOutUi: fresh.summary.outUi,
+        platformFeeBps: fresh.summary.platformFeeBps,
         fair: fill,
       };
       store.event(intent, "success", `${verb} ${spec.asset} at $${fill.effPrice.toFixed(2)} vs $${fill.ref.price.toFixed(2)} real (${fmtBps(fill.premiumBps)})`);
@@ -766,12 +772,16 @@ export class Engine {
       this.refuse(intent, failing.id, `${failing.label}: ${failing.detail}`, pic, true);
       throw new Error(`${failing.label}: ${failing.detail}`);
     }
-    const tx = await getSwapTransaction(fresh.raw, intent.owner);
+    const tx = await getSwapTransaction(fresh.raw, intent.owner, feeAccount(intent)?.toBase58());
     this.fairQuotes.set(intent.id, fresh);
     this.fairPics.set(intent.id, pic);
     return { tx, quote: fresh.summary };
   }
 }
+
+/** The fee owner's USDC account for a fair sell when the platform fee is on. Buys and switches never pass it. */
+const feeAccount = (i: Intent) =>
+  config.platformFeeBps > 0 && config.feeOwner && i.fair?.side === "sell" ? ata(new PublicKey(config.feeOwner), USDC.mint) : undefined;
 
 const netShortfall = (outUi: number, s: QuoteSummary) => shortfallBps(outUi, s.fairOutUi * (1 - s.feeBps / 10_000));
 

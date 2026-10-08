@@ -245,7 +245,11 @@ export function FairOrder({ side }: { side: Side }) {
             <div>
               <div className="k">{buy ? "You would receive" : "You would receive"}</div>
               <div className="v">{outText ?? <span className="skeleton" style={{ display: "block", height: 24 }} />}</div>
-              <div className="s">{quote ? `After fees${quote.feeBps > 0 ? ` (${(quote.feeBps / 100).toFixed(1)}% PreStocks transfer fee)` : ""}, via ${quote.route}` : " "}</div>
+              <div className="s">
+                {quote
+                  ? `After fees${quote.feeBps > 0 ? ` (${(quote.feeBps / 100).toFixed(1)}% PreStocks transfer fee)` : ""}${quote.platformFeeBps ? `, incl. ${(quote.platformFeeBps / 100).toFixed(2)}% Tandem fee` : ""}, via ${quote.route}`
+                  : " "}
+              </div>
             </div>
           </div>
         </section>

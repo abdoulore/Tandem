@@ -25,6 +25,10 @@ export const config = {
   dataDir: process.env.DATA_DIR ?? "data",
   /** Live orders above this many USD are refused. */
   maxLiveUsd: Number(process.env.MAX_LIVE_USD ?? 250),
+  /** Platform fee on fair-price orders, basis points, taken in USDC. Off (0) unless FEE_OWNER is also set. */
+  platformFeeBps: process.env.FEE_OWNER ? Math.max(0, Math.min(100, Number(process.env.PLATFORM_FEE_BPS ?? 0))) : 0,
+  /** Wallet that receives platform fees (its USDC account must exist: npx tsx scripts/create-fee-account.ts). */
+  feeOwner: process.env.FEE_OWNER?.trim() || undefined,
   telegramToken: process.env.TELEGRAM_BOT_TOKEN?.trim() || undefined,
   /** Public address of the app, used in alert links. */
   appUrl: (process.env.APP_URL ?? "https://tandem.moonrider.online").replace(/\/$/, ""),

@@ -62,14 +62,15 @@ export async function getQuote(
   amountRaw: bigint | string,
   slippageBps: number,
   fresh = false,
+  platformFeeBps = 0,
 ): Promise<JupQuote> {
-  const key = `${inputMint}|${outputMint}|${amountRaw}|${slippageBps}`;
+  const key = `${inputMint}|${outputMint}|${amountRaw}|${slippageBps}|${platformFeeBps}`;
   const hit = quoteCache.get(key);
   if (!fresh && hit && Date.now() - hit.at < QUOTE_TTL_MS) return hit.quote;
   assertNotPaused();
   const url =
     `${config.jupiterUrl}/quote?inputMint=${inputMint}&outputMint=${outputMint}` +
-    `&amount=${amountRaw.toString()}&slippageBps=${slippageBps}&swapMode=ExactIn&maxAccounts=40`;
+    `&amount=${amountRaw.toString()}&slippageBps=${slippageBps}&swapMode=ExactIn&maxAccounts=40` + (platformFeeBps > 0 ? `&platformFeeBps=${platformFeeBps}` : "");
   const quote = fetch(url, { headers: headers(), signal: AbortSignal.timeout(8_000) }).then((res) => readJson<JupQuote>(res, "Jupiter quote"));
   quoteCache.set(key, { at: Date.now(), quote });
   quote.catch(() => quoteCache.delete(key)); // never cache failures
@@ -98,7 +99,7 @@ const toIx = (ix: RawIx) =>
  * Swap instructions for `user` (the keeper) that deliver the output straight into
  * `destinationTokenAccount` (the owner's target-stock account).
  */
-export async function getSwapInstructions(conn: Connection, quote: JupQuote, user: PublicKey, destinationTokenAccount: PublicKey) {
+export async function getSwapInstructions(conn: Connection, quote: JupQuote, user: PublicKey, destinationTokenAccount: PublicKey, feeAccount?: PublicKey) {
   const res = await fetch(`${config.jupiterUrl}/swap-instructions`, {
     method: "POST",
     headers: headers(),
@@ -106,6 +107,7 @@ export async function getSwapInstructions(conn: Connection, quote: JupQuote, use
       quoteResponse: quote,
       userPublicKey: user.toBase58(),
       destinationTokenAccount: destinationTokenAccount.toBase58(),
+      ...(feeAccount ? { feeAccount: feeAccount.toBase58() } : {}),
       wrapAndUnwrapSol: false,
       dynamicComputeUnitLimit: true,
       prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: 200_000, priorityLevel: "high" } },
@@ -139,13 +141,14 @@ export async function getSwapInstructions(conn: Connection, quote: JupQuote, use
 }
 
 /** A complete swap transaction for `user` to sign themselves (one-tap confirm switches). */
-export async function getSwapTransaction(quote: JupQuote, user: string): Promise<string> {
+export async function getSwapTransaction(quote: JupQuote, user: string, feeAccount?: string): Promise<string> {
   const res = await fetch(`${config.jupiterUrl}/swap`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
       quoteResponse: quote,
       userPublicKey: user,
+      ...(feeAccount ? { feeAccount } : {}),
       wrapAndUnwrapSol: false,
       dynamicComputeUnitLimit: true,
       prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: 200_000, priorityLevel: "high" } },

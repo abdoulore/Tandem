@@ -166,6 +166,8 @@ export interface QuoteSummary {
   shortfallBps: number;
   /** Known token transfer fees on this route (PreStocks charge 1% per transfer), basis points. */
   feeBps: number;
+  /** Tandem's platform fee on this order, basis points (fair orders only; 0 when off). Already in outUi. */
+  platformFeeBps?: number;
   priceImpactPct: number;
   route: string;
 }
@@ -173,6 +175,8 @@ export interface QuoteSummary {
 export interface Execution {
   /** Fair-price orders: session, reference and price actually paid or received. */
   fair?: FairFill;
+  /** Tandem's platform fee on this fill, basis points (sells only, when on). */
+  platformFeeBps?: number;
   at: number;
   paper: boolean;
   signature?: string;
