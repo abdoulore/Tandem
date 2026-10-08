@@ -11,6 +11,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   createApproveCheckedInstruction,
+  createRevokeInstruction,
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
@@ -69,6 +70,15 @@ export async function buildRevokeTx(owner: PublicKey, from: string, keeper: Publ
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
     createApproveCheckedInstruction(ata(owner, src.mint), new PublicKey(src.mint), keeper, owner, remainingRaw, src.decimals, [], programId(src.mint)),
   ];
+  const { blockhash } = await conn.getLatestBlockhash();
+  const msg = new TransactionMessage({ payerKey: owner, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message();
+  return Buffer.from(new VersionedTransaction(msg).serialize()).toString("base64");
+}
+
+/** Remove the keeper's approval on one of the owner's token accounts entirely. The owner signs and pays. */
+export async function buildFullRevokeTx(owner: PublicKey, ticker: string) {
+  const src = legAsset(ticker);
+  const ixs = [ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }), createRevokeInstruction(ata(owner, src.mint), owner, [], programId(src.mint))];
   const { blockhash } = await conn.getLatestBlockhash();
   const msg = new TransactionMessage({ payerKey: owner, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message();
   return Buffer.from(new VersionedTransaction(msg).serialize()).toString("base64");

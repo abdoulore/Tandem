@@ -5,6 +5,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import type { Intent } from "../../shared/types";
 import { IntentList } from "../components/IntentList";
 import { TelegramAlerts } from "../components/TelegramAlerts";
+import { TrustPanel } from "../components/TrustPanel";
 import { useAppData } from "../state/AppData";
 
 const OPEN = new Set<Intent["status"]>(["armed", "ready", "awaiting_approval", "executing"]);
@@ -79,6 +80,7 @@ export function Switches() {
       </div>
 
       <TelegramAlerts />
+      <TrustPanel />
 
       <div className="tabs" role="tablist" aria-label="Orders" onKeyDown={onKey}>
         {TABS.map((t) => (

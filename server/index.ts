@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
-import { LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { ASSETS, ASSET_BY_TICKER, USDC, getAsset, isConverting, legAsset, tokenSymbol } from "../shared/assets";
 import { pairRatio, rawFromUi, sharesForSizing, triggerRatio, uiFromRaw } from "../shared/math";
 import { parseIntent } from "../shared/parser";
@@ -27,7 +27,7 @@ import { driftLastWriteAt, startDriftLogger } from "./drift";
 import { series, summarize, type DriftSummary, type SeriesPoint } from "./driftStats";
 import { Engine } from "./engine";
 import { PriceService } from "./prices";
-import { ata, buildApprovalTx, buildRevokeTx, conn, programId, submitSigned, tokenAccountState } from "./solana";
+import { ata, buildApprovalTx, buildFullRevokeTx, buildRevokeTx, conn, programId, submitSigned, tokenAccountState } from "./solana";
 import { store } from "./store";
 import { telegram } from "./telegram";
 import { TokenState } from "./tokenState";
@@ -51,6 +51,7 @@ app.use("/api/parse", limit(60));
 app.use("/api/pair", limit(60));
 app.post("/api/intents", limit(10));
 app.use("/api/intents/:id", limit(20));
+app.use("/api/trust", limit(30));
 app.use("/api/telegram", limit(20));
 app.use("/api/drift", limit(60));
 
@@ -584,6 +585,87 @@ app.get(
     const body = series(Math.floor(Date.now() / 1000) - hours * 3600, bucket, ticker);
     seriesCache.set(key, { at: Date.now(), body });
     return body;
+  }),
+);
+
+// ---- trust: what the keeper may move ------------------------------------------------------
+
+const OPEN = ["armed", "ready", "awaiting_approval", "executing"];
+
+/** Every token this wallet has used for automatic orders: what the keeper is approved to move, and what open orders need. */
+app.get(
+  "/api/trust",
+  route(async (req) => {
+    const owner = String(req.query.owner ?? "");
+    if (!owner || owner.startsWith("guest:")) return { keeper: null, approvals: [] };
+    const pk = new PublicKey(owner);
+    const keeper = config.keeper?.publicKey.toBase58() ?? null;
+    const auto = store.byOwner(owner).filter((i) => i.mode === "live" && i.style === "auto");
+    const tokensUsed = [...new Set(auto.map((i) => i.from))];
+    const approvals = await Promise.all(
+      tokensUsed.map(async (t) => {
+        const leg = legAsset(t);
+        const mult = tokens.multiplier(t);
+        const st = await tokenAccountState(pk, t).catch(() => null);
+        const toKeeper = !!st && !!keeper && st.delegate === keeper;
+        return {
+          token: t,
+          symbol: tokenSymbol(t),
+          approvedUi: toKeeper ? uiFromRaw(st!.delegatedAmount, leg.decimals, mult) : 0,
+          balanceUi: st ? uiFromRaw(st.amount, leg.decimals, mult) : 0,
+          neededUi: uiFromRaw(committedRaw(owner, t), leg.decimals, mult),
+          openOrders: auto.filter((i) => i.from === t && OPEN.includes(i.status)).length,
+          otherDelegate: st?.delegate && st.delegate !== keeper ? st.delegate : undefined,
+        };
+      }),
+    );
+    let sol: number | undefined;
+    if (config.keeper) sol = (await conn.getBalance(config.keeper.publicKey).catch(() => 0)) / LAMPORTS_PER_SOL;
+    return { keeper: keeper ? { pubkey: keeper, sol } : null, approvals };
+  }),
+);
+
+/** Revoke now: a transaction for the owner to sign that removes the keeper's approval on one token. */
+app.post(
+  "/api/trust/revoke-tx",
+  route(async (req) => {
+    const owner = String(req.body?.owner ?? "");
+    const token = String(req.body?.token ?? "");
+    if (!owner || owner.startsWith("guest:")) throw new Error("Connect a wallet");
+    legAsset(token);
+    return { tx: await buildFullRevokeTx(new PublicKey(owner), token) };
+  }),
+);
+
+/** Relays the signed revoke, then cancels the open automatic orders that relied on it. */
+app.post(
+  "/api/trust/revoke",
+  route(async (req) => {
+    const owner = String(req.body?.owner ?? "");
+    const token = String(req.body?.token ?? "");
+    const mint = legAsset(token).mint;
+    const tx = VersionedTransaction.deserialize(Buffer.from(String(req.body?.signedTx ?? ""), "base64"));
+    const keys = tx.message.staticAccountKeys;
+    const pk = new PublicKey(owner);
+    if (!keys[0]?.equals(pk)) throw new Error("The revoke must be paid and signed by the owner");
+    const source = ata(pk, mint);
+    // Only compute-budget instructions and token-program instructions on this one account.
+    const onlyRevoke = tx.message.compiledInstructions.every((ix) => {
+      const prog = keys[ix.programIdIndex];
+      if (prog?.equals(ComputeBudgetProgram.programId)) return true;
+      return !!prog?.equals(programId(mint)) && keys[ix.accountKeyIndexes[0]]?.equals(source);
+    });
+    if (!onlyRevoke) throw new Error("Not a revoke for this token");
+    const signature = await submitSigned(String(req.body?.signedTx));
+    const cancelled = store
+      .byOwner(owner)
+      .filter((i) => i.mode === "live" && i.style === "auto" && i.from === token && OPEN.includes(i.status) && i.status !== "executing");
+    for (const i of cancelled) {
+      i.status = "cancelled";
+      store.event(i, "info", "Cancelled: you revoked the keeper's approval");
+    }
+    store.touch();
+    return { signature, cancelled: cancelled.length };
   }),
 );
 

@@ -45,6 +45,11 @@ export interface FairPreview {
   balanceUi?: number;
 }
 
+export interface Trust {
+  keeper: { pubkey: string; sol?: number } | null;
+  approvals: { token: string; symbol: string; approvedUi: number; balanceUi: number; neededUi: number; openOrders: number; otherDelegate?: string }[];
+}
+
 export const api = {
   status: () => call<Status>("/status"),
   market: () => call<MarketSnapshot>("/market"),
@@ -61,6 +66,9 @@ export const api = {
   swapTx: (id: string, owner: string) => call<{ tx: string; quote: QuoteSummary }>(`/intents/${id}/swap-tx`, { owner }),
   executed: (id: string, signedTx: string) => call<{ intent: Intent }>(`/intents/${id}/executed`, { signedTx }),
   revoke: (id: string, signedTx: string) => call<{ signature: string }>(`/intents/${id}/revoke`, { signedTx }),
+  trust: (owner: string) => call<Trust>(`/trust?owner=${encodeURIComponent(owner)}`),
+  revokeAllTx: (owner: string, token: string) => call<{ tx: string }>("/trust/revoke-tx", { owner, token }),
+  revokeAll: (owner: string, token: string, signedTx: string) => call<{ signature: string; cancelled: number }>("/trust/revoke", { owner, token, signedTx }),
   telegram: (owner: string) => call<{ enabled: boolean; bot?: string; linked: boolean }>(`/telegram?owner=${encodeURIComponent(owner)}`),
   telegramLink: (body: { owner: string; guest?: string; ts?: number; signature?: string }) => call<{ url: string }>("/telegram/link", body),
 };

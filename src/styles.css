@@ -473,3 +473,14 @@ details.advanced.limits-line summary { font-weight: 400; color: var(--ink-3); li
 .expiry-line input { width: 56px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); font-family: var(--mono); font-size: 13px; }
 @media (max-width: 640px) { .fair-row { grid-template-columns: 1fr; } }
 .move-stats .num.pos { color: var(--good); }
+
+/* Trust panel: what the keeper may move */
+.trust { margin-top: 12px; padding: 14px 16px; }
+.trust-head { display: flex; gap: 14px; align-items: flex-start; }
+.trust-head > div { display: grid; gap: 2px; font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+.trust-head strong { color: var(--ink); font-size: 14px; font-weight: 620; }
+.trust-empty { margin: 10px 0 0 38px; font-size: 13px; color: var(--ink-3); }
+.trust-rows { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.trust-rows li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13.5px; }
+.trust-rows small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+@media (max-width: 640px) { .trust-rows li { flex-wrap: wrap; } .trust-rows .btn { width: 100%; justify-content: center; } .trust-empty { margin-left: 0; } }
