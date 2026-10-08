@@ -1,3 +1,4 @@
+import { LifecycleBadge } from "./LifecycleBadge";
 import { ASSET_BY_TICKER } from "../../shared/assets";
 import type { AssetQuote, MarketSnapshot } from "../../shared/types";
 
@@ -33,6 +34,7 @@ const Name = ({ a }: { a: AssetQuote }) => (
   <td>
     <strong>{a.ticker}</strong>
     <span className="name">{ASSET_BY_TICKER[a.ticker]?.name}</span>
+    <LifecycleBadge ticker={a.ticker} />
   </td>
 );
 

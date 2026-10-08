@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ASSET_BY_TICKER, tokenSymbol } from "../shared/assets";
 import { describeSizing, fmtNum } from "../shared/math";
+import { upcoming, type LifecycleEvent } from "../shared/lifecycle";
 import type { Intent } from "../shared/types";
 import { config } from "./config";
 import { store } from "./store";
@@ -15,6 +16,16 @@ const FILE = path.join(config.dataDir, "telegram.json");
 const LINK_TTL_MS = 10 * 60_000;
 /** A switch that flips between Ready and monitoring re-alerts at most this often. */
 const READY_REPEAT_MS = 15 * 60_000;
+/** Lifecycle alerts: open orders are checked every few minutes, wallet holdings once a day. */
+const LIFECYCLE_EVERY_MS = 10 * 60_000;
+const HOLDINGS_EVERY_MS = 24 * 3600_000;
+const LIFECYCLE_DAYS = 7;
+
+export interface LifecycleDeps {
+  lifecycle: () => LifecycleEvent[];
+  /** Whether a wallet holds any of a token (wallet owners only, never guests). */
+  holds: (owner: string, ticker: string) => Promise<boolean>;
+}
 
 type Button = { text: string; url: string };
 interface Update {
@@ -40,6 +51,10 @@ class Telegram {
   /** Bot username, set once the token checks out. */
   bot?: string;
   private links = new Map<string, number>(); // owner -> chat id
+  /** Lifecycle alerts already sent, as "chat|event key", so each goes out once. */
+  private sent = new Set<string>();
+  private deps?: LifecycleDeps;
+  private lastHoldings = 0;
   private pending = new Map<string, { owners: string[]; exp: number }>();
   private seen = new Map<string, Intent["status"]>();
   private readyAlerted = new Map<string, number>();
@@ -54,10 +69,13 @@ class Telegram {
     return this.links.has(owner);
   }
 
-  async start() {
+  async start(deps?: LifecycleDeps) {
     if (!config.telegramToken) return;
+    this.deps = deps;
     try {
-      this.links = new Map(Object.entries(JSON.parse(fs.readFileSync(FILE, "utf8")).links ?? {}));
+      const saved = JSON.parse(fs.readFileSync(FILE, "utf8"));
+      this.links = new Map(Object.entries(saved.links ?? {}));
+      this.sent = new Set(saved.sent ?? []);
     } catch {
       /* first run */
     }
@@ -71,7 +89,46 @@ class Telegram {
     for (const i of store.all()) this.seen.set(i.id, i.status);
     setInterval(() => this.scan(), 2_000);
     setInterval(() => this.flush(), 5_000);
+    if (deps) {
+      setTimeout(() => this.lifecycleScan(), 60_000);
+      setInterval(() => this.lifecycleScan(), LIFECYCLE_EVERY_MS);
+    }
     void this.poll();
+  }
+
+  /**
+   * Lifecycle alerts, once per event per chat: open orders whose asset has an event within a week, and
+   * (once a day) linked wallets still holding a token that must be converted by a deadline.
+   */
+  async lifecycleScan() {
+    if (!this.deps) return;
+    const events = this.deps.lifecycle();
+    const sendOnce = async (chat: number, e: LifecycleEvent, lead: string) => {
+      const k = `${chat}|${e.key}`;
+      if (this.sent.has(k)) return;
+      this.sent.add(k);
+      this.dirty = true;
+      const link = e.source ? `\n\n<a href="${e.source}">Source</a>` : "";
+      await this.send(chat, `<b>${esc(name(e.ticker))}: ${esc(e.title)}</b>\n${esc(lead)}\n\n${esc(e.detail)}${link}`, [[{ text: "Open Tandem", url: page() }]]).catch(() => {
+        this.sent.delete(k);
+      });
+    };
+    for (const i of store.all()) {
+      if (!["armed", "ready", "awaiting_approval"].includes(i.status)) continue;
+      const chat = this.links.get(i.owner);
+      if (chat === undefined) continue;
+      const asset = i.kind === "fair" ? i.fair!.asset : undefined;
+      for (const t of asset ? [asset] : [i.from, i.to]) for (const e of upcoming(events, t, LIFECYCLE_DAYS)) await sendOnce(chat, e, "One of your open orders is affected.");
+    }
+    if (Date.now() - this.lastHoldings < HOLDINGS_EVERY_MS) return;
+    this.lastHoldings = Date.now();
+    for (const e of events.filter((x) => x.kind === "conversion")) {
+      for (const [owner, chat] of this.links) {
+        if (owner.startsWith("guest:") || this.sent.has(`${chat}|${e.key}`)) continue;
+        if (await this.deps.holds(owner, e.ticker).catch(() => false)) await sendOnce(chat, e, "Your wallet still holds this token.");
+      }
+    }
+    this.flush();
   }
 
   /** A one-time t.me link that ties the chat that opens it to these owners. */
@@ -255,7 +312,7 @@ class Telegram {
     const tmp = `${FILE}.${process.pid}.${Date.now()}.tmp`;
     try {
       fs.mkdirSync(config.dataDir, { recursive: true });
-      fs.writeFileSync(tmp, JSON.stringify({ links: Object.fromEntries(this.links) }));
+      fs.writeFileSync(tmp, JSON.stringify({ links: Object.fromEntries(this.links), sent: [...this.sent] }));
       fs.renameSync(tmp, FILE);
     } catch (e) {
       this.dirty = true;

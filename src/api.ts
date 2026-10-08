@@ -1,3 +1,4 @@
+import type { LifecycleEvent } from "../shared/lifecycle";
 import type { Check, ExecStyle, FairDraft, FairPicture, Intent, IntentDraft, MarketSnapshot, ParseResult, QuoteSummary, Status } from "../shared/types";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -66,6 +67,7 @@ export const api = {
   swapTx: (id: string, owner: string) => call<{ tx: string; quote: QuoteSummary }>(`/intents/${id}/swap-tx`, { owner }),
   executed: (id: string, signedTx: string) => call<{ intent: Intent }>(`/intents/${id}/executed`, { signedTx }),
   revoke: (id: string, signedTx: string) => call<{ signature: string }>(`/intents/${id}/revoke`, { signedTx }),
+  lifecycle: () => call<LifecycleEvent[]>("/lifecycle"),
   trust: (owner: string) => call<Trust>(`/trust?owner=${encodeURIComponent(owner)}`),
   revokeAllTx: (owner: string, token: string) => call<{ tx: string }>("/trust/revoke-tx", { owner, token }),
   revokeAll: (owner: string, token: string, signedTx: string) => call<{ signature: string; cancelled: number }>("/trust/revoke", { owner, token, signedTx }),

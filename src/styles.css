@@ -484,3 +484,7 @@ details.advanced.limits-line summary { font-weight: 400; color: var(--ink-3); li
 .trust-rows li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13.5px; }
 .trust-rows small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
 @media (max-width: 640px) { .trust-rows li { flex-wrap: wrap; } .trust-rows .btn { width: 100%; justify-content: center; } .trust-empty { margin-left: 0; } }
+
+/* Lifecycle badges: dividends, splits, pauses, conversion deadlines */
+.lc-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; padding: 0 6px; height: 18px; border-radius: 999px; font-size: 10.5px; font-weight: 600; vertical-align: middle; white-space: nowrap; background: var(--warn-soft); color: var(--warn); font-family: var(--font, inherit); }
+.lc-badge.paused { background: var(--bad-soft); color: var(--bad); }

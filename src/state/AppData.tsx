@@ -3,6 +3,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { cancelMessage } from "../../shared/messages";
+import type { LifecycleEvent } from "../../shared/lifecycle";
 import type { Intent, MarketSnapshot, Status } from "../../shared/types";
 import { api } from "../api";
 import { guestId, usePoll } from "../lib/hooks";
@@ -15,6 +16,8 @@ interface AppData {
   guest: string;
   status?: Status;
   market?: MarketSnapshot;
+  /** Conversion deadlines, multiplier changes and pauses, refreshed every few minutes. */
+  lifecycle: LifecycleEvent[];
   intents: Intent[];
   readyCount: number;
   busyId: string | null;
@@ -34,6 +37,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const [status, setStatus] = useState<Status>();
   const [market, setMarket] = useState<MarketSnapshot>();
+  const [lifecycle, setLifecycle] = useState<LifecycleEvent[]>([]);
   const [intents, setIntents] = useState<Intent[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; bad?: boolean } | null>(null);
@@ -45,6 +49,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   usePoll(() => api.status().then(setStatus).catch(() => {}), 15_000);
   usePoll(() => api.market().then(setMarket).catch(() => {}), 5_000);
+  usePoll(() => api.lifecycle().then(setLifecycle).catch(() => {}), 300_000);
   usePoll(
     () => {
       const owners = [...new Set([owner, guest])];
@@ -121,7 +126,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readyKey, say]);
 
-  const value: AppData = { owner, guest, status, market, intents, readyCount: ready.length, busyId, say, confirmSwitch, cancel };
+  const value: AppData = { owner, guest, status, market, lifecycle, intents, readyCount: ready.length, busyId, say, confirmSwitch, cancel };
   return (
     <Ctx.Provider value={value}>
       {children}

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Copy } from "@phosphor-icons/react";
 import { ASSETS, ASSET_BY_TICKER, isConverting, tokenSymbol } from "../../shared/assets";
 import { BrandMark } from "../components/Brand";
+import { LifecycleBadge } from "../components/LifecycleBadge";
 import { Logo } from "../components/Logo";
 import { usePoll } from "../lib/hooks";
 import { useAppData } from "../state/AppData";
@@ -195,7 +196,9 @@ export function Radar() {
                         <Logo asset={a} size={24} />
                         <span>
                           <strong>{a.name}</strong>
-                          <small>{tokenSymbol(a.ticker)}</small>
+                          <small>
+                            {tokenSymbol(a.ticker)} <LifecycleBadge ticker={a.ticker} />
+                          </small>
                         </span>
                       </span>
                     </td>

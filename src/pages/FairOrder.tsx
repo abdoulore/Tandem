@@ -11,6 +11,7 @@ import { DEFAULT_FAIR, DEFAULT_LIMITS, canonicalFairDraft, type FairDraft, type 
 import { api, type FairPreview } from "../api";
 import { AssetPicker } from "../components/AssetPicker";
 import { ChecksList } from "../components/Checks";
+import { LifecycleNote } from "../components/LifecycleBadge";
 import { NumberField } from "../components/NumberField";
 import { useDebounced, usePoll } from "../lib/hooks";
 import { b64, useAppData } from "../state/AppData";
@@ -206,6 +207,7 @@ export function FairOrder({ side }: { side: Side }) {
               <Check size={18} weight="bold" />
               <p>{sentence}</p>
             </div>
+            <LifecycleNote ticker={draft.asset} />
             {invalid && <p className="hint bad">{invalid}</p>}
             {previewErr && !invalid && <p className="hint bad">{previewErr}</p>}
           </div>

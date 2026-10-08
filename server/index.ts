@@ -26,6 +26,7 @@ import { config } from "./config";
 import { driftLastWriteAt, startDriftLogger } from "./drift";
 import { series, summarize, type DriftSummary, type SeriesPoint } from "./driftStats";
 import { Engine } from "./engine";
+import { lifecycleEvents } from "./lifecycle";
 import { PriceService } from "./prices";
 import { ata, buildApprovalTx, buildFullRevokeTx, buildRevokeTx, conn, programId, submitSigned, tokenAccountState } from "./solana";
 import { store } from "./store";
@@ -52,6 +53,7 @@ app.use("/api/pair", limit(60));
 app.post("/api/intents", limit(10));
 app.use("/api/intents/:id", limit(20));
 app.use("/api/trust", limit(30));
+app.use("/api/lifecycle", limit(60));
 app.use("/api/telegram", limit(20));
 app.use("/api/drift", limit(60));
 
@@ -588,6 +590,19 @@ app.get(
   }),
 );
 
+// ---- lifecycle -----------------------------------------------------------------------------
+
+let lifecycleCache: { at: number; body: unknown } | undefined;
+app.get(
+  "/api/lifecycle",
+  route(() => {
+    if (lifecycleCache && Date.now() - lifecycleCache.at < 60_000) return lifecycleCache.body;
+    const body = lifecycleEvents(tokens);
+    lifecycleCache = { at: Date.now(), body };
+    return body;
+  }),
+);
+
 // ---- trust: what the keeper may move ------------------------------------------------------
 
 const OPEN = ["armed", "ready", "awaiting_approval", "executing"];
@@ -773,7 +788,12 @@ app.listen(config.port, (err?: Error) => {
   prices.start();
   startDriftLogger(prices, tokens);
   engine.start();
-  telegram.start().catch((e) => console.error("Telegram alerts failed to start:", (e as Error).message));
+  telegram
+    .start({
+      lifecycle: () => lifecycleEvents(tokens),
+      holds: async (owner, ticker) => (await tokenAccountState(new PublicKey(owner), ticker)).amount > 0n,
+    })
+    .catch((e) => console.error("Telegram alerts failed to start:", (e as Error).message));
   console.log(`Tandem API on http://localhost:${config.port}`);
   console.log(`  prices: ${prices.sourceNote}`);
   console.log(`  keeper: ${config.keeper?.publicKey.toBase58() ?? "not configured (paper mode only)"}`);

@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { ASSET_BY_TICKER, lifecycleNote } from "../../shared/assets";
 import type { AssetQuote } from "../../shared/types";
+import { LifecycleBadge } from "../components/LifecycleBadge";
 import { Logo } from "../components/Logo";
 import { MarketTable } from "../components/MarketTable";
 import { useAppData } from "../state/AppData";
@@ -23,7 +24,9 @@ function ConvertingCard({ q }: { q: AssetQuote }) {
         <Logo asset={asset} size={32} />
         <div>
           <div className="pm-name">{asset.name}</div>
-          <div className="pm-sub">{q.ticker}</div>
+          <div className="pm-sub">
+            {q.ticker} <LifecycleBadge ticker={q.ticker} />
+          </div>
         </div>
       </div>
       <div className="pm-prem">
@@ -56,7 +59,9 @@ function PrivateCard({ q, onCreate }: { q: AssetQuote; onCreate: () => void }) {
         <Logo asset={asset} size={32} />
         <div>
           <div className="pm-name">{asset.name}</div>
-          <div className="pm-sub">{q.ticker}</div>
+          <div className="pm-sub">
+            {q.ticker} <LifecycleBadge ticker={q.ticker} />
+          </div>
         </div>
       </div>
       <div className="pm-prem">
