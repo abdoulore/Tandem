@@ -23,13 +23,13 @@ async function multiplier(mint: string) {
 
 // Recent traders of the mint, as stand-in wallets (indexed "largest holders" calls are rate-limited on public RPCs).
 async function holders(mint: string) {
-  const sigs = await conn.getSignaturesForAddress(new PublicKey(mint), { limit: 40 });
+  const sigs = await conn.getSignaturesForAddress(new PublicKey(mint), { limit: 100 });
   const seen = new Map<string, bigint>();
   for (const s of sigs) {
     if (s.err) continue;
     const tx = await conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 }).catch(() => null);
     for (const b of tx?.meta?.postTokenBalances ?? []) {
-      if (b.mint !== mint || !b.owner) continue;
+      if (b.mint !== mint || !b.owner || b.uiTokenAmount.amount === "0") continue;
       seen.set(b.owner, BigInt(b.uiTokenAmount.amount));
     }
     if (seen.size >= 12) break;
@@ -52,8 +52,13 @@ const pxRes = await (await fetch(`https://lite-api.jup.ag/price/v3?ids=${src.min
 const price = (pxRes as any)[src.mint].usdPrice as number;
 const amountRaw = rawFromUi(usd / price, src.decimals, mult);
 console.log("candidates:", hs.map((h) => `${h.owner.toBase58().slice(0, 6)} ${uiFromRaw(h.amount, src.decimals, mult).toFixed(3)} ${from}x ${h.sol.toFixed(3)} SOL`).join(" | "), "need", uiFromRaw(amountRaw, src.decimals, mult).toFixed(3));
-const owner = hs.find((h) => h.amount >= amountRaw && h.sol > 0.01);
-const keeper = hs.find((h) => h !== owner && h.sol > 0.05);
+async function wallet(pk: string) {
+  const owner = new PublicKey(pk);
+  const bal = await conn.getTokenAccountBalance(ata(owner, src.mint)).catch(() => null);
+  return { owner, amount: BigInt(bal?.value.amount ?? "0"), sol: (await conn.getBalance(owner)) / 1e9 };
+}
+const owner = process.env.OWNER ? await wallet(process.env.OWNER) : hs.find((h) => h.amount >= amountRaw && h.sol > 0.01);
+const keeper = process.env.KEEPER ? await wallet(process.env.KEEPER) : hs.find((h) => h !== owner && h.sol > 0.05);
 if (!owner || !keeper) throw new Error("Could not find stand-in wallets");
 console.log(`owner  (stand-in) ${owner.owner.toBase58()}  holds ${uiFromRaw(owner.amount, src.decimals, mult).toFixed(4)} ${from}x`);
 console.log(`keeper (stand-in) ${keeper.owner.toBase58()}  ${keeper.sol.toFixed(3)} SOL`);
