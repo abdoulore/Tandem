@@ -181,3 +181,15 @@ a.btn:hover { text-decoration: none; }
 }
 
 .converting-note { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13.5px; }
+
+/* Fair-price landing additions */
+.preview-nums .v.good { color: var(--good); }
+.preview-nums .v.bad { color: var(--bad); }
+.problem-note { margin-top: 24px; color: var(--ink-2); max-width: 70ch; }
+.proof-path.refused-path { color: var(--bad); }
+.hero-grid > * { min-width: 0; }
+@media (max-width: 480px) {
+  .preview-nums.three { gap: 10px; }
+  .preview-nums .v { font-size: 17px; }
+  .preview-prem { flex-direction: column; gap: 4px; }
+}

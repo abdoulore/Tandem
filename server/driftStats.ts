@@ -29,6 +29,8 @@ export interface DriftRow {
 export interface DriftSummary {
   from: number;
   to: number;
+  /** Earliest sample actually in the window (the log may start after "from"). */
+  first?: number;
   rows: DriftRow[];
 }
 
@@ -104,7 +106,8 @@ export function summarize(from: number, to = Math.floor(Date.now() / 1000)): Dri
     };
   });
   rows.sort((a, b) => a.ticker.localeCompare(b.ticker) || a.session.localeCompare(b.session));
-  return { from, to, rows };
+  const first = samples.length ? Math.min(...samples.map((s) => s.t)) : undefined;
+  return { from, to, first, rows };
 }
 
 export interface SeriesPoint {
