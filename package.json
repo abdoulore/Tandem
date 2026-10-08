@@ -10,7 +10,9 @@
     "start": "cross-env NODE_ENV=production tsx server/index.ts",
     "keygen": "tsx scripts/keygen.ts",
     "simulate": "tsx scripts/simulate.ts",
-    "test": "tsx scripts/test-parser.ts"
+    "test": "tsx scripts/test-parser.ts",
+    "drift": "tsx scripts/drift-logger.ts",
+    "drift:report": "tsx scripts/drift-report.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

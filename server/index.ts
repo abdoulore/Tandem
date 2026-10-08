@@ -11,6 +11,8 @@ import { parseIntent } from "../shared/parser";
 import { DEFAULT_LIMITS, PRE_IPO_SLIPPAGE_BPS, canonicalDraft, type ExecStyle, type Intent, type IntentDraft, type Status } from "../shared/types";
 import { cancelMessage, intentMessage, telegramMessage, verify } from "./auth";
 import { config } from "./config";
+import { startDriftLogger } from "./drift";
+import { summarize, type DriftSummary } from "./driftStats";
 import { Engine } from "./engine";
 import { PriceService } from "./prices";
 import { ata, buildApprovalTx, buildRevokeTx, conn, submitSigned, tokenAccountState } from "./solana";
@@ -37,6 +39,7 @@ app.use("/api/pair", limit(60));
 app.post("/api/intents", limit(10));
 app.use("/api/intents/:id", limit(20));
 app.use("/api/telegram", limit(20));
+app.use("/api/drift", limit(60));
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 const route = (fn: Handler) => async (req: Request, res: Response) => {
@@ -346,6 +349,22 @@ app.post(
   }),
 );
 
+// ---- drift ---------------------------------------------------------------------
+
+// How far tokens trade from their reference, per ticker and session, over the last N hours (max 14 days).
+const driftCache = new Map<number, { at: number; body: DriftSummary }>();
+app.get(
+  "/api/drift/summary",
+  route((req) => {
+    const hours = Math.min(336, Math.max(1, Math.round(Number(req.query.hours) || 72)));
+    const hit = driftCache.get(hours);
+    if (hit && Date.now() - hit.at < 60_000) return hit.body;
+    const body = summarize(Math.floor(Date.now() / 1000) - hours * 3600);
+    driftCache.set(hours, { at: Date.now(), body });
+    return body;
+  }),
+);
+
 // ---- Telegram alerts -------------------------------------------------------------
 
 const isGuest = (o: unknown): o is string => typeof o === "string" && /^guest:[\w-]{4,64}$/.test(o);
@@ -386,6 +405,7 @@ app.listen(config.port, (err?: Error) => {
   }
   tokens.start();
   prices.start();
+  startDriftLogger(prices, tokens);
   engine.start();
   telegram.start().catch((e) => console.error("Telegram alerts failed to start:", (e as Error).message));
   console.log(`Tandem API on http://localhost:${config.port}`);
