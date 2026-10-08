@@ -29,12 +29,13 @@ It covers **13 public stocks (Backed xStocks)** and **7 pre-IPO companies (PreSt
 | 2026-10-08 | [7af1f66](https://github.com/abdoulore/Tandem/commit/7af1f66) Radar · [4304176](https://github.com/abdoulore/Tandem/commit/4304176) Proof · [9318542](https://github.com/abdoulore/Tandem/commit/9318542) trust panel · [a7a917c](https://github.com/abdoulore/Tandem/commit/a7a917c) lifecycle alerts |
 | 2026-10-08 | [8bb817b](https://github.com/abdoulore/Tandem/commit/8bb817b) Optional platform fee · [60f314d](https://github.com/abdoulore/Tandem/commit/60f314d) landing rewrite |
 | 2026-10-08 | [8b6483a](https://github.com/abdoulore/Tandem/commit/8b6483a) Finnhub stock reference, cross-checked against Backed |
+| 2026-10-08 | [077bf3b](https://github.com/abdoulore/Tandem/commit/077bf3b) On-chain minimum re-checked against the limit on the fresh quote · [5878945](https://github.com/abdoulore/Tandem/commit/5878945) held orders on Proof |
 
 ## Why
 
 - Solana carries about 95% of onchain tokenized-equity volume ([rwa.xyz, July 2026](https://cryptobriefing.com/solana-tokenized-stocks-analytics-dashboard)).
 - More than half of that volume trades outside normal US hours, when the stock itself is not trading ([Blockworks and RWA.xyz, cited](https://www.financemagnates.com/thought-leadership/the-convergence-trade-nobody-planned-on-chain-fridays-to-nyse-mondays/)). That is when tokens drift from their stock ([Pine Analytics](https://pineanalytics.substack.com/p/tokenized-equities-on-solana)).
-- Limit and trigger orders on Solana run on the token's own swap price ([Jupiter](https://developers.jup.ag/blog/lov2-the-any-any-problem)), so they cannot tell a fair price from a premium.
+- Jupiter's limit orders run on the token's own swap price ([Jupiter](https://developers.jup.ag/blog/lov2-the-any-any-problem)), so they cannot tell a fair price from a premium.
 
 Tandem prices the order against the stock instead, and refuses to fill past the user's limit.
 
@@ -124,7 +125,7 @@ Requires Node 20+.
 
 ```bash
 npm install
-cp .env.example .env         # add PYTH_API_KEY and a private RPC URL if you have them
+cp .env.example .env         # add FINNHUB_API_KEY (free at finnhub.io) and a private RPC URL
 npm run keygen               # creates the keeper wallet in .env
 npm run dev                  # site on http://localhost:5173, API on :8787
 ```

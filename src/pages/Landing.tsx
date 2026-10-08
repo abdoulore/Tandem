@@ -247,7 +247,7 @@ export function Landing() {
             </li>
           </ol>
           <p className="problem-note">
-            Limit orders on Solana trigger on the token&apos;s own swap price, not the stock&apos;s.{" "}
+            Jupiter&apos;s limit orders trigger on the token&apos;s own swap price, not the stock&apos;s.{" "}
             <a href="https://developers.jup.ag/blog/lov2-the-any-any-problem" target="_blank" rel="noreferrer">
               Jupiter explains why
             </a>
