@@ -103,7 +103,8 @@ export type CheckId =
   | "paused"
   | "balance"
   | "delegation"
-  | "quote";
+  | "quote"
+  | "price";
 
 export interface Check {
   id: CheckId;
@@ -140,6 +141,20 @@ export interface Evaluation {
   checks: Check[];
   blockedBy?: string;
   quote?: QuoteSummary;
+  /** Fair-price orders: the price picture behind this evaluation. */
+  fair?: FairPicture;
+}
+
+/** What a fair-price order would pay (or get) right now against the real stock. */
+export interface FairPicture {
+  session: "regular" | "extended" | "weekend" | "24/7";
+  ref: RefSnapshot;
+  /** USDC per share for this order size, after fees. */
+  effPrice: number;
+  /** Signed, vs the reference (+ = above the real price), basis points. */
+  premiumBps: number;
+  /** Limit in force now; null when this session is not allowed. */
+  limitBps: number | null;
 }
 
 export interface QuoteSummary {
@@ -155,6 +170,8 @@ export interface QuoteSummary {
 }
 
 export interface Execution {
+  /** Fair-price orders: session, reference and price actually paid or received. */
+  fair?: FairFill;
   at: number;
   paper: boolean;
   signature?: string;
@@ -171,6 +188,11 @@ export interface Execution {
   expectedOutUi?: number;
   /** Reference prices behind the decision, per leg. */
   refs?: { from: RefSnapshot; to: RefSnapshot };
+}
+
+export interface FairFill extends FairPicture {
+  side: Side;
+  asset: string;
 }
 
 export interface RefSnapshot {

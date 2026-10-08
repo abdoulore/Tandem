@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DRIFT_DIR, type DriftProbe, type DriftSample, type Session } from "./drift";
+import type { Session } from "../shared/fair";
+import { DRIFT_DIR, type DriftProbe, type DriftSample } from "./drift";
 
 // Summary statistics over the drift log, shared by `npm run drift:report` and GET /api/drift/summary.
 

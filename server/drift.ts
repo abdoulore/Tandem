@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ASSETS, USDC, type AssetKind } from "../shared/assets";
+import { sessionOf, type Session } from "../shared/fair";
 import { uiFromRaw } from "../shared/math";
 import { config } from "./config";
 import { getQuote, routeLabel } from "./jupiter";
@@ -19,7 +20,6 @@ const WARN_EVERY_MS = 3_600_000;
 const STALE_MARK_SEC = 3_600;
 
 export const DRIFT_DIR = path.join(config.dataDir, "drift");
-export type Session = "regular" | "extended" | "weekend" | "24/7";
 
 export interface DriftSample {
   t: number;
@@ -52,13 +52,6 @@ export interface DriftProbe {
 const bps = (a: number, b: number) => (a / b - 1) * 10_000;
 const round = (n: number | undefined, d = 2) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
 
-/** US equities: regular when the market is open, weekend on New York Saturday or Sunday, otherwise extended (holidays included). */
-export function sessionOf(kind: AssetKind, open: boolean, t: number): Session {
-  if (kind === "prestock") return "24/7";
-  if (open) return "regular";
-  const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(new Date(t * 1000));
-  return day === "Sat" || day === "Sun" ? "weekend" : "extended";
-}
 
 const lastWarn = new Map<string, number>();
 function warnOnce(kind: string, msg: string) {

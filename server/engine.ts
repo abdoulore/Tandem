@@ -1,7 +1,8 @@
 import { PublicKey } from "@solana/web3.js";
-import { getAsset, tokenSymbol } from "../shared/assets";
+import { USDC, getAsset, legAsset, tokenSymbol } from "../shared/assets";
+import { activeLimit, effectivePrice, fairConditionMet, limitMinOutUi, premiumBps, sessionOf, slippageForLimit } from "../shared/fair";
 import { changePct, conditionMet, fmtNum, progress, shortfallBps, uiFromRaw } from "../shared/math";
-import type { Check, ExecStyle, Execution, Intent, Limits, Mode, QuoteSummary, RefSnapshot } from "../shared/types";
+import type { Check, ExecStyle, Execution, FairFill, FairPicture, FairSpec, Intent, Limits, Mode, QuoteSummary, RefSnapshot, Side } from "../shared/types";
 import { config } from "./config";
 import { getQuote, getSwapTransaction, routeLabel, type JupQuote } from "./jupiter";
 import type { PriceService } from "./prices";
@@ -14,15 +15,31 @@ const DELEGATION_REFRESH_MS = 30_000;
 const MAX_LIVE_ATTEMPTS = 3;
 /** Once Ready, the trigger condition gets this long to flicker while the user confirms. Safety checks get none. */
 const READY_GRACE_MS = 120_000;
+/** Fair orders re-quote their real size this often; each passing quote is one confirmation. */
+const FAIR_QUOTE_MS = 20_000;
+/** Off-hours, the reference is the last regular-session print: allow one that covers weekends and holidays. */
+const OFF_HOURS_REF_MAX_SEC = 100 * 3600;
+
+/** A fill refused because the price moved past the user's limit. Not a failure: the order keeps watching. */
+class Refusal extends Error {}
+
+type FairQuote = { summary: QuoteSummary; raw: JupQuote; eff: number };
 
 const age = (t: number) => Math.max(0, Math.round(Date.now() / 1000 - t));
 const fmtAge = (s: number) => (s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`);
 const fmtBps = (b: number) => `${b >= 0 ? "+" : ""}${b.toFixed(0)} bps`;
+/** The premium a fair order accepts, signed against the reference: buys "+50 bps" (at most over), sells "-50 bps" (at most under). */
+const fmtLimit = (side: Side, limitBps: number) => {
+  const t = side === "buy" ? limitBps : -limitBps;
+  return `${t >= 0 ? "+" : "-"}${Math.abs(t)} bps`;
+};
 
 export class Engine {
   private quotes = new Map<string, { summary: QuoteSummary; raw: JupQuote }>();
   private delegation = new Map<string, { at: number; check: Check }>();
   private attempts = new Map<string, number>();
+  private fairQuotes = new Map<string, FairQuote>();
+  private fairPics = new Map<string, FairPicture>();
   private busy = false;
 
   constructor(
@@ -234,7 +251,9 @@ export class Engine {
 
   private async tick() {
     const armed = store.all().filter((i) => i.status === "armed" || i.status === "ready");
-    await Promise.all(armed.map((i) => this.evaluate(i).catch((e) => store.event(i, "error", `Evaluation error: ${(e as Error).message}`))));
+    await Promise.all(
+      armed.map((i) => (i.kind === "fair" ? this.evaluateFair(i) : this.evaluate(i)).catch((e) => store.event(i, "error", `Evaluation error: ${(e as Error).message}`))),
+    );
   }
 
   private async evaluate(intent: Intent) {
@@ -395,6 +414,7 @@ export class Engine {
 
   /** One-tap confirm: re-run every check, then hand back a swap transaction for the owner to sign. */
   async buildConfirmTx(intent: Intent): Promise<{ tx: string; quote: QuoteSummary }> {
+    if (intent.kind === "fair") return this.buildConfirmTxFair(intent);
     if (intent.status !== "ready") throw new Error("This switch is not ready");
     const fromRef = this.prices.ref(intent.from)?.price;
     const toRef = this.prices.ref(intent.to)?.price;
@@ -415,8 +435,8 @@ export class Engine {
   }
 
   async recordConfirmed(intent: Intent, signature: string) {
-    const q = this.quotes.get(intent.id)?.summary;
-    const dst = getAsset(intent.to);
+    const q = (intent.kind === "fair" ? this.fairQuotes.get(intent.id) : this.quotes.get(intent.id))?.summary;
+    const dst = legAsset(intent.to);
     const got = await receivedRaw(signature, ata(new PublicKey(intent.owner), dst.mint));
     const outUi = got !== undefined ? uiFromRaw(got, dst.decimals, this.tokens.multiplier(intent.to)) : (q?.outUi ?? 0);
     intent.status = "executed";
@@ -430,10 +450,311 @@ export class Engine {
       fairOutUi: q?.fairOutUi ?? outUi,
       shortfallBps: q ? netShortfall(outUi, q) : 0,
       route: q?.route ?? "Jupiter",
-      ...(q ? this.receiptExtras(intent, q) : {}),
+      ...(q && intent.kind !== "fair" ? this.receiptExtras(intent, q) : {}),
     };
+    const pic = this.fairPics.get(intent.id);
+    if (intent.kind === "fair" && q && pic) intent.execution = { ...intent.execution, feeBps: q.feeBps, expectedOutUi: q.outUi, fair: this.fairFill(intent, pic, q.inUi, outUi) };
     store.event(intent, "success", `Confirmed: ${fmtNum(intent.execution.inUi)} ${intent.from} -> ${fmtNum(outUi)} ${intent.to}`);
     store.touch();
+  }
+
+  // ---- fair-price orders -------------------------------------------------------
+
+  /** Quote a fair-price order at its real size: USDC to the stock (buy) or the stock to USDC (sell). */
+  async quoteFair(side: Side, asset: string, amountRaw: bigint, style: ExecStyle, slippageBps = 50, fresh = false) {
+    const stock = getAsset(asset);
+    const from = side === "buy" ? USDC : stock;
+    const to = side === "buy" ? stock : USDC;
+    const mult = this.tokens.multiplier(asset);
+    const fee = this.tokens.feeBps(asset) / 10_000; // PreStocks 1% per transfer, xStocks 0
+    const pull = style === "auto";
+    // A sell pays the stock's transfer fee on the way into the pool, which Jupiter's quote leaves out (see quoteSwitch).
+    const srcFeeBps = side === "sell" ? this.tokens.feeBps(asset) : 0;
+    const pullFee = pull && side === "sell" ? this.tokens.feeFor(asset, amountRaw) : 0n;
+    const raw = await getQuote(from.mint, to.mint, amountRaw - pullFee, slippageBps + srcFeeBps, fresh);
+    const inUi = uiFromRaw(amountRaw, from.decimals, side === "sell" ? mult : 1);
+    const outUi = uiFromRaw(raw.outAmount, to.decimals, side === "buy" ? mult : 1) * (1 - srcFeeBps / 10_000);
+    const dex = this.prices.dexPrice(asset) ?? this.prices.token(asset)?.price;
+    if (!dex) throw new Error("Missing token price");
+    const fairOutUi = side === "buy" ? inUi / dex : inUi * dex;
+    const feeFactor = side === "buy" ? 1 - fee : (pull ? 1 - fee : 1) * (1 - fee);
+    const summary: QuoteSummary = {
+      at: Date.now(),
+      inUi,
+      outUi,
+      fairOutUi,
+      shortfallBps: shortfallBps(outUi, fairOutUi * feeFactor),
+      feeBps: (1 - feeFactor) * 10_000,
+      priceImpactPct: Number(raw.priceImpactPct) * 100,
+      route: routeLabel(raw),
+    };
+    return { summary, raw, eff: effectivePrice(side, inUi, outUi) };
+  }
+
+  /** Session, reference, effective price and premium for a fair order right now. */
+  fairPicture(spec: FairSpec, eff: number): FairPicture | undefined {
+    const ref = this.prices.ref(spec.asset);
+    if (!ref) return undefined;
+    const kind = getAsset(spec.asset).kind;
+    const open = !!this.prices.quote(spec.asset).marketOpen;
+    // Unknown market hours count as closed, so they need the off-hours opt-in rather than slipping through.
+    const offHours = kind === "xstock" && !open;
+    return {
+      session: sessionOf(kind, open, Date.now() / 1000),
+      ref: { source: this.prices.refSource(spec.asset), price: ref.price, ageSec: age(ref.publishTime) },
+      effPrice: eff,
+      premiumBps: premiumBps(eff, ref.price),
+      limitBps: activeLimit(spec, offHours),
+    };
+  }
+
+  /** Checks for a fair order. "price" is the condition itself; every other check can refuse a fill. */
+  fairChecks(spec: FairSpec, pic: FairPicture | undefined, limits: Limits, mode: Mode): Check[] {
+    const kind = getAsset(spec.asset).kind;
+    const src = this.prices.refSource(spec.asset);
+    const ref = this.prices.ref(spec.asset);
+    const q = this.prices.quote(spec.asset);
+    const srcName = src === "pyth" ? "Pyth" : src === "prestocks" ? "PreStocks mark" : src === "jupiter" ? "Backed via Jupiter" : "loading";
+    const trusted = src === "pyth" || src === "prestocks";
+    const checks: Check[] = [
+      {
+        id: "source",
+        label: "Trusted reference price",
+        ok: trusted || mode === "paper",
+        detail: `${spec.asset}: ${srcName}` + (trusted ? "" : mode === "paper" ? " (paper only)" : " - live needs Pyth or PreStocks prices"),
+      },
+    ];
+    const ageSec = ref ? age(ref.publishTime) : Infinity;
+    const ageText = Number.isFinite(ageSec) ? fmtAge(ageSec) : "n/a";
+    if (kind === "xstock" && !q.marketOpen) {
+      const reopens = q.nextOpen ? `, reopens ${new Date(q.nextOpen * 1000).toUTCString().slice(0, 22)} UTC` : "";
+      checks.push({
+        id: "market",
+        label: "Off-hours fill allowed",
+        ok: spec.offHours.allowed,
+        detail: spec.offHours.allowed
+          ? `Market closed${reopens}. Priced against the last real price, limit ${spec.offHours.limitBps} bps`
+          : `Market closed${reopens}. This order fills in regular hours only`,
+      });
+      checks.push({ id: "fresh", label: "Last real price", ok: ageSec <= OFF_HOURS_REF_MAX_SEC, detail: `${ageText} old (max ${fmtAge(OFF_HOURS_REF_MAX_SEC)})` });
+      if (src === "pyth") checks.push({ id: "confidence", label: "Pyth confidence tight", ok: true, detail: "Not used off-hours" });
+    } else {
+      const maxAge =
+        src === "jupiter" && mode === "paper" ? Math.max(limits.maxStalenessSec, 900) : src === "prestocks" ? Math.max(limits.maxStalenessSec, 180) : limits.maxStalenessSec;
+      checks.push({ id: "fresh", label: "Reference price fresh", ok: ageSec <= maxAge, detail: `${spec.asset} ${ageText} (max ${fmtAge(maxAge)})` });
+      if (src === "pyth") {
+        const conf = ref && ref.price ? (ref.conf / ref.price) * 10_000 : Infinity;
+        checks.push({ id: "confidence", label: "Pyth confidence tight", ok: conf <= limits.maxConfBps, detail: `±${Number.isFinite(conf) ? conf.toFixed(1) : "?"} bps (max ${limits.maxConfBps})` });
+      }
+    }
+    const corp = this.tokens.corporateActionNear(spec.asset, limits.corporateActionWindowHours);
+    checks.push({
+      id: "corporate",
+      label: "No corporate action in flight",
+      ok: !corp.near,
+      detail: corp.near ? `Multiplier changes ${new Date(corp.at! * 1000).toUTCString().slice(0, 22)}` : "Multiplier stable",
+    });
+    checks.push({ id: "paused", label: "Token not paused", ok: !q.paused, detail: q.paused ? "Paused by issuer" : "Transfers enabled" });
+    if (pic) {
+      const verb = spec.side === "buy" ? "Pays" : "Gets";
+      const limitText = pic.limitBps === null ? "no fills this session" : `limit ${fmtLimit(spec.side, pic.limitBps)}`;
+      checks.push({
+        id: "price",
+        label: "Price vs real stock",
+        ok: pic.limitBps !== null && fairConditionMet(spec.side, pic.premiumBps, pic.limitBps),
+        detail: `${verb} $${pic.effPrice.toFixed(2)} vs $${pic.ref.price.toFixed(2)} real (${fmtBps(pic.premiumBps)}), ${limitText}, ${pic.session}`,
+      });
+    }
+    return checks;
+  }
+
+  private async evaluateFair(intent: Intent) {
+    const spec = intent.fair!;
+    if (Date.now() > intent.expiresAt) {
+      intent.status = "expired";
+      store.event(intent, "warn", "Expired before the price came within the limit");
+      store.touch();
+      return;
+    }
+    // Re-quote the real order size at most every FAIR_QUOTE_MS. Each new passing quote is one confirmation:
+    // references barely move off-hours, so counting reference ticks would never confirm.
+    const prev = intent.lastEval;
+    let q = this.fairQuotes.get(intent.id);
+    let quoteErr: string | undefined;
+    let freshQuote = false;
+    if (!q || Date.now() - q.summary.at >= FAIR_QUOTE_MS) {
+      try {
+        q = await this.quoteFair(spec.side, spec.asset, BigInt(intent.amountRaw), intent.style);
+        this.fairQuotes.set(intent.id, q);
+        freshQuote = true;
+      } catch (e) {
+        quoteErr = (e as Error).message;
+      }
+    }
+    const pic = q ? this.fairPicture(spec, q.eff) : undefined;
+    const checks = this.fairChecks(spec, pic, intent.limits, intent.mode);
+    checks.push(this.quoteCheck(q?.summary, intent.limits, quoteErr));
+    const met = checks.find((c) => c.id === "price")?.ok ?? false;
+    if (intent.mode === "live") checks.push(intent.style === "auto" ? await this.delegationCheck(intent, met) : await this.balanceCheck(intent, met));
+    const failing = checks.find((c) => c.id !== "price" && !c.ok);
+    const streak = !met ? 0 : freshQuote ? (prev?.conditionMet ? prev.streak + 1 : 1) : (prev?.streak ?? 0);
+    intent.lastEval = {
+      at: Date.now(),
+      ratio: q?.eff ?? 0,
+      changePct: (pic?.premiumBps ?? 0) / 100,
+      progress: met ? 1 : 0,
+      conditionMet: met,
+      streak,
+      checks,
+      blockedBy: met ? failing?.label : undefined,
+      quote: q?.summary,
+      fair: pic,
+    };
+    store.touch();
+
+    if (intent.status === "ready") {
+      // The limit is a hard line, so a one-tap fair order gets no grace: it goes back to watching.
+      if (failing || !met) {
+        intent.status = "armed";
+        store.event(intent, "warn", `No longer ready (${failing ? failing.label : "price moved past your limit"}); back to watching`);
+      }
+      return;
+    }
+    if (met && failing) store.event(intent, "warn", `Refused: ${failing.label}: ${failing.detail}`);
+    if (met && !failing && streak < intent.limits.confirmations)
+      store.event(intent, "info", `Price within your limit (${streak}/${intent.limits.confirmations} quotes)`);
+    if (met && !failing && streak >= intent.limits.confirmations && q && pic) await this.executeFair(intent, q, pic);
+  }
+
+  /**
+   * A fresh quote whose on-chain minimum-out enforces the user's limit, never looser than the slippage
+   * budget. Throws a Refusal when the price has moved past the limit since the last check.
+   */
+  private async limitQuote(intent: Intent) {
+    const spec = intent.fair!;
+    const first = await this.quoteFair(spec.side, spec.asset, BigInt(intent.amountRaw), intent.style, 50, true);
+    const pic = this.fairPicture(spec, first.eff);
+    if (!pic) throw new Refusal("Reference price: missing");
+    if (pic.limitBps === null) throw new Refusal("Off-hours fill allowed: market closed and this order fills in regular hours only");
+    if (!fairConditionMet(spec.side, pic.premiumBps, pic.limitBps))
+      throw new Refusal(`Price vs real stock: moved to ${fmtBps(pic.premiumBps)}, limit ${fmtLimit(spec.side, pic.limitBps)}`);
+    const minOut = limitMinOutUi(spec.side, first.summary.inUi, pic.ref.price, pic.limitBps);
+    const budget = Math.max(10, Math.min(100, Math.floor(intent.limits.maxSlippageBps - Math.max(0, first.summary.shortfallBps))));
+    const slip = slippageForLimit(first.summary.outUi, minOut, budget);
+    if (slip < 1) throw new Refusal("Price vs real stock: no room left under your limit");
+    const fresh = await this.quoteFair(spec.side, spec.asset, BigInt(intent.amountRaw), intent.style, slip, true);
+    return { fresh, pic: this.fairPicture(spec, fresh.eff) ?? pic, slip };
+  }
+
+  private fairFill(intent: Intent, pic: FairPicture, inUi: number, outUi: number): FairFill {
+    const spec = intent.fair!;
+    const eff = effectivePrice(spec.side, inUi, outUi);
+    return { ...pic, effPrice: eff, premiumBps: premiumBps(eff, pic.ref.price), side: spec.side, asset: spec.asset };
+  }
+
+  private async executeFair(intent: Intent, q: FairQuote, pic: FairPicture) {
+    const spec = intent.fair!;
+    const verb = spec.side === "buy" ? "Bought" : "Sold";
+    if (intent.mode === "paper") {
+      intent.status = "executed";
+      intent.execution = {
+        at: Date.now(),
+        paper: true,
+        ratio: q.eff,
+        ...pick(q.summary),
+        feeBps: q.summary.feeBps,
+        expectedOutUi: q.summary.outUi,
+        fair: this.fairFill(intent, pic, q.summary.inUi, q.summary.outUi),
+      };
+      store.event(intent, "success", `Paper: ${verb.toLowerCase()} ${spec.asset} at $${q.eff.toFixed(2)} vs $${pic.ref.price.toFixed(2)} real (${fmtBps(pic.premiumBps)})`);
+      store.touch();
+      return;
+    }
+    if (intent.style === "confirm") {
+      intent.status = "ready";
+      intent.readyAt = Date.now();
+      store.event(intent, "success", "Ready: the price is within your limit. Confirm in your wallet.");
+      store.touch();
+      return;
+    }
+    if (!config.keeper || !config.liveExecution) {
+      store.event(intent, "warn", "Live execution is disabled on this server");
+      return;
+    }
+    if (this.busy) return; // one keeper transaction at a time
+    this.busy = true;
+    intent.status = "executing";
+    store.event(intent, "info", "Price confirmed within your limit - executing");
+    store.touch();
+    try {
+      const delegation = await this.delegationCheck(intent, true);
+      if (!delegation.ok) throw new Error(delegation.detail);
+      const { fresh, pic: now } = await this.limitQuote(intent);
+      const owner = new PublicKey(intent.owner);
+      const { tx, blockhash, lastValidBlockHeight, ownerDst } = await buildSwitchTx(config.keeper, owner, intent.from, intent.to, BigInt(intent.amountRaw), fresh.raw);
+      const sig = await sendAndConfirm(tx, blockhash, lastValidBlockHeight);
+      const dst = legAsset(intent.to);
+      const got = await receivedRaw(sig, ownerDst);
+      const outUi = got !== undefined ? uiFromRaw(got, dst.decimals, this.tokens.multiplier(intent.to)) : fresh.summary.outUi;
+      const fill = this.fairFill(intent, now, fresh.summary.inUi, outUi);
+      intent.status = "executed";
+      intent.execution = {
+        at: Date.now(),
+        paper: false,
+        signature: sig,
+        ratio: fill.effPrice,
+        ...pick(fresh.summary),
+        outUi,
+        shortfallBps: netShortfall(outUi, fresh.summary),
+        feeBps: fresh.summary.feeBps,
+        expectedOutUi: fresh.summary.outUi,
+        fair: fill,
+      };
+      store.event(intent, "success", `${verb} ${spec.asset} at $${fill.effPrice.toFixed(2)} vs $${fill.ref.price.toFixed(2)} real (${fmtBps(fill.premiumBps)})`);
+    } catch (e) {
+      const msg = (e as Error).message.slice(0, 300);
+      if (e instanceof Refusal) {
+        // Not a failure: the price moved past the limit between the check and the fill. Back to watching.
+        intent.status = "armed";
+        intent.lastEval = { ...intent.lastEval!, streak: 0, conditionMet: false };
+        store.event(intent, "warn", `Refused: ${msg}`);
+      } else {
+        const n = (this.attempts.get(intent.id) ?? 0) + 1;
+        this.attempts.set(intent.id, n);
+        if (n >= MAX_LIVE_ATTEMPTS) {
+          intent.status = "failed";
+          intent.execution = { at: Date.now(), paper: false, ratio: q.eff, ...pick(q.summary), error: msg };
+          store.event(intent, "error", `Order failed after ${n} attempts: ${msg}`);
+        } else {
+          intent.status = "armed";
+          intent.lastEval = { ...intent.lastEval!, streak: 0, conditionMet: false };
+          store.event(intent, "warn", `Attempt ${n} failed, back to watching: ${msg}`);
+        }
+      }
+    } finally {
+      this.busy = false;
+      store.touch();
+    }
+  }
+
+  /** One-tap fair order: re-check the limit on a fresh quote, then hand back the swap for the owner to sign. */
+  private async buildConfirmTxFair(intent: Intent): Promise<{ tx: string; quote: QuoteSummary }> {
+    if (intent.status !== "ready") throw new Error("This order is not ready");
+    const { fresh, pic } = await this.limitQuote(intent).catch((e) => {
+      if (e instanceof Refusal) store.event(intent, "warn", `Refused: ${e.message}`);
+      throw e;
+    });
+    const checks = this.fairChecks(intent.fair!, pic, intent.limits, intent.mode);
+    checks.push(await this.balanceCheck(intent, true), this.quoteCheck(fresh.summary, intent.limits));
+    const failing = checks.find((c) => !c.ok);
+    if (failing) {
+      store.event(intent, "warn", `Refused: ${failing.label}: ${failing.detail}`);
+      throw new Error(`${failing.label}: ${failing.detail}`);
+    }
+    const tx = await getSwapTransaction(fresh.raw, intent.owner);
+    this.fairQuotes.set(intent.id, fresh);
+    this.fairPics.set(intent.id, pic);
+    return { tx, quote: fresh.summary };
   }
 }
 
