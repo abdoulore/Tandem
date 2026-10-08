@@ -3,8 +3,8 @@ import type { Check, CheckId } from "../../shared/types";
 
 const GROUPS: { title: "Reference data" | "Asset" | "Execution"; ids: CheckId[] }[] = [
   { title: "Reference data", ids: ["source", "fresh", "market", "confidence"] },
-  { title: "Asset", ids: ["peg", "private", "corporate", "paused"] },
-  { title: "Execution", ids: ["quote", "balance", "delegation"] },
+  { title: "Asset", ids: ["price", "peg", "private", "corporate", "paused"] },
+  { title: "Execution", ids: ["quote", "cap", "balance", "delegation"] },
 ];
 
 function Icon({ state }: { state: "ok" | "bad" | "pending" }) {

@@ -19,10 +19,10 @@ export function AppShell() {
         </Link>
         <nav className="appnav" aria-label="App">
           <NavLink to="/app" end>
-            New switch
+            New order
           </NavLink>
-          <NavLink to="/app/switches">
-            My switches
+          <NavLink to="/app/orders">
+            My orders
             {readyCount > 0 && (
               <span className="count" aria-label={`${readyCount} ready to confirm`}>
                 {readyCount}

@@ -60,11 +60,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     async (i: Intent) => {
       setBusyId(i.id);
       try {
-        if (!wallet.publicKey || wallet.publicKey.toBase58() !== i.owner) throw new Error("Connect the wallet that created this switch");
+        if (!wallet.publicKey || wallet.publicKey.toBase58() !== i.owner) throw new Error("Connect the wallet that created this order");
         const { tx } = await api.swapTx(i.id, i.owner);
         const signed = await wallet.signTransaction!(VersionedTransaction.deserialize(Buffer.from(tx, "base64")));
         await api.executed(i.id, b64(signed));
-        say("Switched. The new tokens are in your wallet.");
+        say(i.kind === "fair" ? "Filled. The tokens are in your wallet." : "Switched. The new tokens are in your wallet.");
       } catch (e) {
         say((e as Error).message, true);
       } finally {
@@ -81,7 +81,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (i.mode === "paper") {
           await api.cancel(i.id, { owner: i.owner });
         } else {
-          if (!wallet.publicKey || wallet.publicKey.toBase58() !== i.owner) throw new Error("Connect the wallet that created this switch");
+          if (!wallet.publicKey || wallet.publicKey.toBase58() !== i.owner) throw new Error("Connect the wallet that created this order");
           const ts = Date.now();
           const sig = await wallet.signMessage!(new TextEncoder().encode(cancelMessage(i.owner, i.id, ts)));
           const { revokeTx } = await api.cancel(i.id, { owner: i.owner, ts, signature: bs58.encode(sig) });
@@ -91,7 +91,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             await api.revoke(i.id, b64(signed));
           }
         }
-        say("Switch cancelled.");
+        say(i.kind === "fair" ? "Order cancelled." : "Switch cancelled.");
       } catch (e) {
         say((e as Error).message, true);
       } finally {
@@ -109,7 +109,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     for (const i of ready) {
       if (seenReady.current.has(i.id)) continue;
       seenReady.current.add(i.id);
-      const msg = `Ready to switch ${i.from} into ${i.to}. Confirm in My switches.`;
+      const msg = i.kind === "fair" ? `Ready to ${i.fair?.side} ${i.fair?.asset} within your limit. Confirm in My orders.` : `Ready to switch ${i.from} into ${i.to}. Confirm in My orders.`;
       say(msg);
       try {
         if ("Notification" in window && Notification.permission === "granted") new Notification("Tandem", { body: msg });

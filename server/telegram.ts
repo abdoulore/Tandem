@@ -25,7 +25,7 @@ interface Update {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const name = (t: string) => ASSET_BY_TICKER[t]?.name ?? t;
-const page = (tab?: string) => `${config.appUrl}/app/switches${tab ? `?tab=${tab}` : ""}`;
+const page = (tab?: string) => `${config.appUrl}/app/orders${tab ? `?tab=${tab}` : ""}`;
 
 /** On a phone, a wallet's own browser is where the confirm tap can sign. */
 const confirmButtons = (url: string): Button[][] => [
@@ -140,7 +140,7 @@ class Telegram {
       const p = this.pending.get(arg);
       this.pending.delete(arg);
       if (!p || p.exp < Date.now()) {
-        await this.send(chat, "That link has expired. In Tandem, open My switches and choose Get Telegram alerts again.");
+        await this.send(chat, "That link has expired. In Tandem, open My orders and choose Get Telegram alerts again.");
         return;
       }
       for (const o of p.owners) this.links.set(o, chat);
@@ -149,8 +149,8 @@ class Telegram {
       const ready = store.all().filter((i) => p.owners.includes(i.owner) && i.status === "ready").length;
       await this.send(
         chat,
-        "<b>Alerts on.</b> You'll get a message here when a switch is ready to confirm, and when one completes or fails.\n\nSend /stop to turn them off." +
-          (ready ? `\n\n<b>${ready === 1 ? "1 switch is" : `${ready} switches are`} ready to confirm now.</b>` : ""),
+        "<b>Alerts on.</b> You'll get a message here when an order is ready to confirm, and when one completes or fails.\n\nSend /stop to turn them off." +
+          (ready ? `\n\n<b>${ready === 1 ? "1 order is" : `${ready} orders are`} ready to confirm now.</b>` : ""),
         ready ? confirmButtons(page()) : [[{ text: "Open Tandem", url: page() }]],
       );
       return;
@@ -164,10 +164,10 @@ class Telegram {
       }
       this.dirty = true;
       this.flush();
-      await this.send(chat, n ? "Alerts off. You can link again any time from My switches in Tandem." : "No switches are linked to this chat.");
+      await this.send(chat, n ? "Alerts off. You can link again any time from My orders in Tandem." : "No orders are linked to this chat.");
       return;
     }
-    await this.send(chat, "Tandem sends alerts about your switches here. To link this chat, open My switches in Tandem and choose Get Telegram alerts.", [
+    await this.send(chat, "Tandem sends alerts about your orders here. To link this chat, open My orders in Tandem and choose Get Telegram alerts.", [
       [{ text: "Open Tandem", url: page() }],
     ]);
   }
@@ -186,6 +186,7 @@ class Telegram {
 
   private render(i: Intent): { text: string; buttons: Button[][] } | null {
     const pair = `${esc(name(i.from))} → ${esc(name(i.to))}`;
+    if (i.kind === "fair" && i.fair) return this.renderFair(i, pair);
     if (i.status === "ready") {
       if (Date.now() - (this.readyAlerted.get(i.id) ?? 0) < READY_REPEAT_MS) return null;
       this.readyAlerted.set(i.id, Date.now());
@@ -214,6 +215,36 @@ class Telegram {
     if (i.status === "failed") {
       const why = i.execution?.error ?? i.events[i.events.length - 1]?.message ?? "";
       return { text: `<b>Switch failed</b>\n${pair}\n\n${esc(why.slice(0, 300))}`, buttons: [[{ text: "Open Tandem", url: page("closed") }]] };
+    }
+    return null;
+  }
+
+  /** Fair-price orders: the price against the real stock is the story, not a ratio. */
+  private renderFair(i: Intent, pair: string): { text: string; buttons: Button[][] } | null {
+    const f = i.fair!;
+    const verb = f.side === "buy" ? "buy" : "sell";
+    const pic = i.lastEval?.fair;
+    const vs = (p?: { effPrice: number; ref: { price: number }; premiumBps: number }) =>
+      p ? `$${p.effPrice.toFixed(2)} vs $${p.ref.price.toFixed(2)} real (${p.premiumBps >= 0 ? "+" : ""}${p.premiumBps.toFixed(0)} bps)` : "";
+    if (i.status === "ready") {
+      if (Date.now() - (this.readyAlerted.get(i.id) ?? 0) < READY_REPEAT_MS) return null;
+      this.readyAlerted.set(i.id, Date.now());
+      return {
+        text: `<b>Ready to ${verb} ${esc(name(f.asset))}</b>\n${esc(vs(pic))}, within your limit.\n\nConfirm to ${verb}. The price is checked again when you confirm.`,
+        buttons: confirmButtons(page()),
+      };
+    }
+    if (i.status === "executed" && i.execution) {
+      const x = i.execution;
+      const lines = [`<b>${x.paper ? "Filled (paper)" : "Filled"}: ${verb} ${esc(name(f.asset))}</b>`, pair, "", esc(vs(x.fair))];
+      if (x.paper) lines.push("Live prices, no funds moved.");
+      const row: Button[] = [{ text: "Receipt", url: page("closed") }];
+      if (x.signature) row.push({ text: "Transaction", url: `https://solscan.io/tx/${x.signature}` });
+      return { text: lines.join("\n"), buttons: [row] };
+    }
+    if (i.status === "failed") {
+      const why = i.execution?.error ?? i.events[i.events.length - 1]?.message ?? "";
+      return { text: `<b>Order failed</b>\n${pair}\n\n${esc(why.slice(0, 300))}`, buttons: [[{ text: "Open Tandem", url: page("closed") }]] };
     }
     return null;
   }

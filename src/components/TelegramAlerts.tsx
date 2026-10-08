@@ -55,7 +55,7 @@ export function TelegramAlerts() {
         {state.linked ? (
           <>
             <strong>Telegram alerts on</strong>
-            <span>@{state.bot} messages you when a switch is ready to confirm, completes or fails. Send /stop to the bot to turn them off.</span>
+            <span>@{state.bot} messages you when an order is ready to confirm, completes or fails. Send /stop to the bot to turn them off.</span>
           </>
         ) : url ? (
           <>
@@ -65,7 +65,7 @@ export function TelegramAlerts() {
         ) : (
           <>
             <strong>Get Telegram alerts</strong>
-            <span>Tandem messages you when a switch is ready to confirm, and when one completes or fails. No need to keep this page open.</span>
+            <span>Tandem messages you when an order is ready to confirm, and when one completes or fails. No need to keep this page open.</span>
           </>
         )}
       </div>

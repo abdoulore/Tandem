@@ -5,10 +5,16 @@ import type { MarketSnapshot } from "../../shared/types";
 import { Logo } from "./Logo";
 
 const converting = (a: Asset) => a.lifecycle?.stage === "listed_converting";
-const GROUPS: { key: string; label: string; has: (a: Asset) => boolean }[] = [
+type Group = { key: string; label: string; has: (a: Asset) => boolean };
+const GROUPS: Group[] = [
   { key: "pre", label: "Pre-IPO, via PreStocks", has: (a) => a.kind === "prestock" && !converting(a) },
   { key: "pub", label: "Public stocks, via xStocks", has: (a) => a.kind === "xstock" },
   { key: "conv", label: "Listed, converting (PreStocks)", has: converting },
+];
+/** Buy and sell orders: public stocks first, pre-IPO marked as higher risk, nothing without a reference. */
+const ORDER_GROUPS: Group[] = [
+  { key: "pub", label: "Public stocks, via xStocks", has: (a) => a.kind === "xstock" },
+  { key: "pre", label: "Pre-IPO (higher risk), via PreStocks", has: (a) => a.kind === "prestock" && !converting(a) },
 ];
 
 const kindLabel = (a: Asset) => (converting(a) ? `Listed as ${a.lifecycle?.listedAs}` : a.kind === "prestock" ? "Pre-IPO" : "Public stock");
@@ -21,9 +27,11 @@ interface Props {
   /** The other side of the pair; shown but not selectable. */
   other?: string;
   market?: MarketSnapshot;
+  /** Order-form ordering: public stocks first, pre-IPO flagged as higher risk. */
+  publicFirst?: boolean;
 }
 
-export function AssetPicker({ id, value, onChange, other, market }: Props) {
+export function AssetPicker({ id, value, onChange, other, market, publicFirst }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const root = useRef<HTMLDivElement>(null);
@@ -79,7 +87,7 @@ export function AssetPicker({ id, value, onChange, other, market }: Props) {
             <input autoFocus placeholder={`Search ${ASSETS.length} assets`} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search assets" />
           </label>
           <div className="picker-list" role="listbox" aria-labelledby={id}>
-            {GROUPS.map((g) => {
+            {(publicFirst ? ORDER_GROUPS : GROUPS).map((g) => {
               const items = ASSETS.filter((a) => g.has(a) && match(a.ticker));
               if (!items.length) return null;
               return (

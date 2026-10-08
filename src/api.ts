@@ -1,4 +1,4 @@
-import type { Check, ExecStyle, Intent, IntentDraft, MarketSnapshot, ParseResult, QuoteSummary, Status } from "../shared/types";
+import type { Check, ExecStyle, FairDraft, FairPicture, Intent, IntentDraft, MarketSnapshot, ParseResult, QuoteSummary, Status } from "../shared/types";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -30,6 +30,21 @@ export interface Preview {
   thinTrigger?: number;
 }
 
+export interface FairPreview {
+  draft: FairDraft;
+  from: string;
+  to: string;
+  amountRaw: string;
+  amountUi: number;
+  usdValue: number;
+  marketPrice: number;
+  style: ExecStyle;
+  checks: Check[];
+  quote?: QuoteSummary;
+  picture?: FairPicture;
+  balanceUi?: number;
+}
+
 export const api = {
   status: () => call<Status>("/status"),
   market: () => call<MarketSnapshot>("/market"),
@@ -37,7 +52,8 @@ export const api = {
   parse: (text: string) => call<ParseResult>("/parse", { text }),
   preview: (draft: Partial<IntentDraft>, owner?: string) => call<Preview>("/preview", { draft, owner }),
   intents: (owner: string) => call<Intent[]>(`/intents?owner=${encodeURIComponent(owner)}`),
-  create: (body: { draft: IntentDraft; owner: string; ts?: number; signature?: string }) =>
+  fairPreview: (draft: FairDraft, owner?: string) => call<FairPreview>("/fair/preview", { draft, owner }),
+  create: (body: { draft: IntentDraft | FairDraft; owner: string; ts?: number; signature?: string }) =>
     call<{ intent: Intent; approvalTx?: string }>("/intents", body),
   confirm: (id: string, signedTx?: string) => call<{ intent: Intent }>(`/intents/${id}/confirm`, { signedTx }),
   cancel: (id: string, body: { owner: string; ts?: number; signature?: string }) =>

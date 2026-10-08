@@ -16,7 +16,7 @@ const closedAt = (i: Intent) => i.execution?.at ?? i.events[i.events.length - 1]
 function EmptyState() {
   return (
     <div className="empty-rich">
-      <h3>No open switches</h3>
+      <h3>No open orders</h3>
       <p>Tandem watches the relationship between two assets and acts when your condition is met. Try this one:</p>
       <div className="empty-example">
         <div className="pair">
@@ -64,23 +64,23 @@ export function Switches() {
     <main className="page">
       <div className="page-head row">
         <div>
-          <h1>My switches</h1>
+          <h1>My orders</h1>
           <p>
             {readyCount > 0
-              ? `${readyCount} ready to confirm. Every check passed; confirm in your wallet to switch.`
+              ? `${readyCount} ready to confirm. Every check passed; confirm in your wallet.`
               : wallet.connected
-                ? "Switches from this wallet and this browser."
-                : "Paper switches from this browser. Connect a wallet to see live ones."}
+                ? "Orders from this wallet and this browser."
+                : "Paper orders from this browser. Connect a wallet to see live ones."}
           </p>
         </div>
         <Link to="/app" className="btn btn-primary">
-          New switch
+          New order
         </Link>
       </div>
 
       <TelegramAlerts />
 
-      <div className="tabs" role="tablist" aria-label="Switches" onKeyDown={onKey}>
+      <div className="tabs" role="tablist" aria-label="Orders" onKeyDown={onKey}>
         {TABS.map((t) => (
           <button
             key={t}
@@ -110,7 +110,7 @@ export function Switches() {
             onCancel={cancel}
             onConfirm={confirmSwitch}
             busyId={busyId ?? undefined}
-            empty="Nothing closed yet. Switches that fire, expire or are cancelled show up here with their receipts."
+            empty="Nothing closed yet. Orders that fill, expire or are cancelled show up here with their receipts."
           />
         )}
       </div>

@@ -60,7 +60,8 @@ const age = (t?: number) => {
   return s < 90 ? `${s}s` : `${Math.round(s / 60)}m`;
 };
 
-export function NewSwitch() {
+/** The switch builder. Embedded inside the order page as its Switch tab, without its own page header. */
+export function NewSwitch({ embedded = false }: { embedded?: boolean }) {
   const wallet = useWallet();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -166,7 +167,7 @@ export function NewSwitch() {
       if (mode === "paper") {
         await api.create({ draft: full, owner });
         say("Paper switch created. Track it in My switches.");
-        navigate("/app/switches");
+        navigate("/app/orders");
         return;
       }
       const pk = wallet.publicKey!.toBase58();
@@ -176,14 +177,14 @@ export function NewSwitch() {
       if (!approvalTx) {
         if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
         say("Live switch created. When it triggers and every check passes, you'll confirm in one tap.");
-        navigate("/app/switches");
+        navigate("/app/orders");
         return;
       }
       say("Approve the exact amount in your wallet. Your tokens stay with you until the switch.");
       const signed = await wallet.signTransaction!(VersionedTransaction.deserialize(Buffer.from(approvalTx, "base64")));
       await api.confirm(intent.id, b64(signed));
       say("Live switch created. Approval confirmed on-chain.");
-      navigate("/app/switches");
+      navigate("/app/orders");
     } catch (e) {
       say((e as Error).message, true);
     } finally {
@@ -217,13 +218,7 @@ export function NewSwitch() {
       : "Quoting",
   };
 
-  return (
-    <main className="page">
-      <div className="page-head">
-        <h1>New switch</h1>
-        <p>Pick two assets and a condition. Tandem checks everything before it moves.</p>
-      </div>
-
+  const grid = (
       <div className="grid">
         <div className="stack">
           <section className="card builder">
@@ -443,6 +438,15 @@ export function NewSwitch() {
           </div>
         </aside>
       </div>
+  );
+  if (embedded) return grid;
+  return (
+    <main className="page">
+      <div className="page-head">
+        <h1>New switch</h1>
+        <p>Pick two assets and a condition. Tandem checks everything before it moves.</p>
+      </div>
+      {grid}
     </main>
   );
 }
