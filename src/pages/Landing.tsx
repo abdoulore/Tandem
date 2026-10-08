@@ -89,7 +89,7 @@ const STEPS = [
 const FAQ = [
   {
     q: "What is the real price?",
-    a: "For a public stock, the stock's own price from Finnhub, which must agree with the issuer Backed's price within 0.5% before a live order fills in market hours. For a pre-IPO token, its PreStocks mark. Every price in the app shows where it came from and how old it is.",
+    a: "For a public stock, the stock's own price from Finnhub, which must agree with the issuer Backed's price within 1% before a live order fills in market hours. For a pre-IPO token, its PreStocks mark. Every price in the app shows where it came from and how old it is.",
   },
   {
     q: "What happens when the US market is closed?",

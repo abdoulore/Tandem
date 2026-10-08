@@ -147,7 +147,12 @@ export class PriceService {
 
   private describeSource() {
     const refsOnPyth = XSTOCKS.filter((a) => this.feedSource.get(a.feeds.ref) === "pyth").length;
-    if (!config.pythApiKey) {
+    const onFinnhub = this.finnhubCount();
+    if (refsOnPyth < XSTOCKS.length && onFinnhub > 0) {
+      // Pyth equities need Pyth Pro; Finnhub is the live reference, checked against Backed in session.
+      this.source = "mixed";
+      this.sourceNote = `Public stocks priced by Finnhub (${onFinnhub}/${XSTOCKS.length} live), checked against Backed; pre-IPO by PreStocks marks.`;
+    } else if (!config.pythApiKey) {
       this.source = "mixed";
       this.sourceNote = "No PYTH_API_KEY - xStocks priced by Backed via Jupiter (paper only)";
     } else if (this.pythError) {

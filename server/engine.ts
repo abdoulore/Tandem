@@ -20,7 +20,7 @@ const FAIR_QUOTE_MS = 20_000;
 /** Off-hours, the reference is the last regular-session print: allow one that covers weekends and holidays. */
 const OFF_HOURS_REF_MAX_SEC = 100 * 3600;
 /** Finnhub and Backed must agree within this in market hours before anything fills. */
-const AGREE_BPS = 50;
+const AGREE_BPS = 100; // Backed's price lags a few minutes in session; this catches a broken reference, the user's limit prices the order
 /** The same refusal on the same order is logged at most this often. */
 const REFUSAL_EVERY_MS = 10 * 60_000;
 
