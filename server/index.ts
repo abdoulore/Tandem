@@ -4,11 +4,24 @@ import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { ASSETS, ASSET_BY_TICKER, getAsset, isConverting, legAsset, tokenSymbol } from "../shared/assets";
+import { ASSETS, ASSET_BY_TICKER, USDC, getAsset, isConverting, legAsset, tokenSymbol } from "../shared/assets";
 import { pairRatio, rawFromUi, sharesForSizing, triggerRatio, uiFromRaw } from "../shared/math";
 import { parseIntent } from "../shared/parser";
-import { DEFAULT_LIMITS, PRE_IPO_SLIPPAGE_BPS, canonicalDraft, type ExecStyle, type Intent, type IntentDraft, type Status } from "../shared/types";
-import { cancelMessage, intentMessage, telegramMessage, verify } from "./auth";
+import {
+  DEFAULT_FAIR,
+  DEFAULT_LIMITS,
+  PRE_IPO_SLIPPAGE_BPS,
+  canonicalDraft,
+  canonicalFairDraft,
+  type Check,
+  type ExecStyle,
+  type FairDraft,
+  type FairSpec,
+  type Intent,
+  type IntentDraft,
+  type Status,
+} from "../shared/types";
+import { cancelMessage, fairMessage, intentMessage, telegramMessage, verify } from "./auth";
 import { config } from "./config";
 import { driftLastWriteAt, startDriftLogger } from "./drift";
 import { summarize, type DriftSummary } from "./driftStats";
@@ -33,6 +46,7 @@ const limit = (perMinute: number) =>
   rateLimit({ windowMs: 60_000, limit: perMinute, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "Too many requests, slow down a little" } });
 app.use("/api", limit(600));
 app.use("/api/preview", limit(60));
+app.use("/api/fair", limit(60));
 app.use("/api/parse", limit(60));
 app.use("/api/pair", limit(60));
 app.post("/api/intents", limit(10));
@@ -97,6 +111,70 @@ function priceContext(d: IntentDraft) {
 
 /** Tokens with a transfer fee (PreStocks) switch by one-tap confirm so they aren't moved an extra time. */
 const styleFor = (from: string): ExecStyle => (tokens.feeBps(from) > 0 ? "confirm" : "auto");
+
+// ---- fair-price orders ---------------------------------------------------------------
+
+/** PreStocks charge 1% per transfer, so their orders are always one-tap; xStocks run through the keeper. */
+const fairStyle = (asset: string): ExecStyle => (getAsset(asset).kind === "prestock" ? "confirm" : "auto");
+
+function normalizeFair(d: Partial<FairDraft>): FairDraft {
+  const a = d.asset ? ASSET_BY_TICKER[d.asset] : undefined;
+  if (!a) throw new Error("Pick a stock");
+  if (d.side !== "buy" && d.side !== "sell") throw new Error("Choose buy or sell");
+  if (!d.sizing) throw new Error("Enter an amount");
+  const amount = d.sizing.kind === "usd" ? d.sizing.usd : d.sizing.shares;
+  if (!(amount > 0)) throw new Error("Amount must be positive");
+  const limitBps = Number(d.limitBps ?? DEFAULT_FAIR.limitBps);
+  if (!Number.isFinite(limitBps) || limitBps < -1000 || limitBps > 1000) throw new Error("Limit must be between -10% and +10% of the real price");
+  const off = d.offHours ?? DEFAULT_FAIR.offHours;
+  const offLimit = Number(off.limitBps ?? DEFAULT_FAIR.offHours.limitBps);
+  if (!Number.isFinite(offLimit) || offLimit < 0 || offLimit > 1000) throw new Error("Off-hours limit must be between 0% and 10%");
+  if (d.mode === "live" && isConverting(a.ticker)) throw new Error(`${a.name} is converting to its listed stock. Live orders resume once the reference is verified.`);
+  const limits = { ...DEFAULT_LIMITS, ...(a.kind === "prestock" ? { maxSlippageBps: PRE_IPO_SLIPPAGE_BPS } : {}), ...(d.limits ?? {}) };
+  return {
+    kind: "fair",
+    side: d.side,
+    asset: a.ticker,
+    sizing: d.sizing,
+    limitBps,
+    offHours: { allowed: !!off.allowed, limitBps: offLimit },
+    mode: d.mode === "live" ? "live" : "paper",
+    limits,
+    expiresInDays: Math.min(90, Math.max(1, Number(d.expiresInDays ?? 7))),
+    text: d.text,
+  };
+}
+
+/** Order size in the source token (USDC for a buy, the stock for a sell), sized at the market price. */
+function fairContext(d: FairDraft) {
+  const a = getAsset(d.asset);
+  if (isConverting(a.ticker) && !prices.ref(a.ticker)) throw new Error(`${a.name} has no reference price since it listed, so orders are paused.`);
+  const px = prices.marketPrice(a.ticker);
+  if (!px) throw new Error("Prices are still loading - try again in a moment");
+  const mult = tokens.multiplier(a.ticker);
+  const from = d.side === "buy" ? USDC.ticker : a.ticker;
+  const to = d.side === "buy" ? a.ticker : USDC.ticker;
+  if (d.side === "buy") {
+    const usd = d.sizing.kind === "usd" ? d.sizing.usd : d.sizing.shares * px;
+    const amountRaw = BigInt(Math.round(usd * 10 ** USDC.decimals));
+    return { from, to, amountRaw, amountUi: Number(amountRaw) / 10 ** USDC.decimals, usdValue: usd, marketPrice: px };
+  }
+  const shares = d.sizing.kind === "shares" ? d.sizing.shares : d.sizing.usd / px;
+  const amountRaw = rawFromUi(shares, a.decimals, mult);
+  const amountUi = uiFromRaw(amountRaw, a.decimals, mult);
+  return { from, to, amountRaw, amountUi, usdValue: amountUi * px, marketPrice: px };
+}
+
+const fairSpec = (d: FairDraft): FairSpec => ({ side: d.side, asset: d.asset, limitBps: d.limitBps, offHours: d.offHours });
+
+function capCheck(usdValue: number): Check {
+  return {
+    id: "cap",
+    label: "Within the live order cap",
+    ok: usdValue <= config.maxLiveUsd,
+    detail: `$${usdValue.toFixed(2)} of a $${config.maxLiveUsd} cap per live order`,
+  };
+}
 
 /** Live switching needs authoritative references: Pyth for xStocks, PreStocks marks for pre-IPO. */
 const authoritative = (t: string) => prices.refSource(t) === "pyth" || prices.refSource(t) === "prestocks";
@@ -237,6 +315,48 @@ app.post(
   }),
 );
 
+app.post(
+  "/api/fair/preview",
+  route(async (req) => {
+    const d = normalizeFair(req.body?.draft ?? {});
+    const ctx = fairContext(d);
+    const style = fairStyle(d.asset);
+    const spec = fairSpec(d);
+    let quote;
+    let picture;
+    let quoteErr: string | undefined;
+    try {
+      const r = await engine.quoteFair(d.side, d.asset, ctx.amountRaw, style);
+      quote = r.summary;
+      picture = engine.fairPicture(spec, r.eff);
+    } catch (e) {
+      quoteErr = (e as Error).message;
+    }
+    const checks = engine.fairChecks(spec, picture, d.limits, d.mode);
+    checks.push(engine.quoteCheck(quote, d.limits, quoteErr));
+    if (d.mode === "live") checks.push(capCheck(ctx.usdValue));
+    let balanceUi: number | undefined;
+    const owner = req.body?.owner as string | undefined;
+    if (owner && !owner.startsWith("guest:")) {
+      try {
+        const st = await tokenAccountState(new PublicKey(owner), ctx.from);
+        const src = legAsset(ctx.from);
+        balanceUi = uiFromRaw(st.amount, src.decimals, tokens.multiplier(ctx.from));
+        if (d.mode === "live")
+          checks.push({
+            id: "balance",
+            label: `Wallet holds ${tokenSymbol(ctx.from)}`,
+            ok: st.amount >= ctx.amountRaw + committedRaw(owner, ctx.from),
+            detail: `${balanceUi.toFixed(4)} ${tokenSymbol(ctx.from)} in wallet, needs ${ctx.amountUi.toFixed(4)}`,
+          });
+      } catch {
+        /* balance is informational in preview */
+      }
+    }
+    return { draft: d, ...ctx, amountRaw: ctx.amountRaw.toString(), style, checks, quote, picture, balanceUi };
+  }),
+);
+
 app.get(
   "/api/intents",
   route((req) => {
@@ -248,6 +368,7 @@ app.get(
 app.post(
   "/api/intents",
   route(async (req) => {
+    if (req.body?.draft?.kind === "fair") return createFair(req);
     const d = normalizeDraft(req.body?.draft ?? {});
     const owner = String(req.body?.owner ?? "");
     if (!owner) throw new Error("Missing owner");
@@ -262,6 +383,7 @@ app.post(
     }
     const style = styleFor(d.from);
     const ctx = priceContext(d);
+    if (d.mode === "live" && ctx.usdValue > config.maxLiveUsd) throw new Error(`Live switches are capped at $${config.maxLiveUsd} on this server`);
     const now = Date.now();
     const intent: Intent = {
       id: crypto.randomUUID().slice(0, 8),
@@ -294,6 +416,57 @@ app.post(
     return { intent, approvalTx: tx };
   }),
 );
+
+async function createFair(req: Request) {
+  const d = normalizeFair(req.body?.draft ?? {});
+  const owner = String(req.body?.owner ?? "");
+  if (!owner) throw new Error("Missing owner");
+  const style = fairStyle(d.asset);
+  const ctx = fairContext(d);
+  if (d.mode === "live") {
+    if (owner.startsWith("guest:")) throw new Error("Connect a wallet for live orders");
+    const ts = Number(req.body?.ts);
+    const err = verify(owner, fairMessage(owner, canonicalFairDraft(d), ts), String(req.body?.signature ?? ""), ts);
+    if (err) throw new Error(err);
+    if (!config.liveExecution) throw new Error("Live orders are disabled on this server");
+    if (!authoritative(d.asset)) throw new Error("Live orders need a Pyth or PreStocks reference price for this stock");
+    if (style === "auto" && !config.keeper) throw new Error("Automatic orders are not available on this server right now");
+    if (ctx.usdValue > config.maxLiveUsd) throw new Error(`Live orders are capped at $${config.maxLiveUsd} on this server`);
+  }
+  const ref = prices.ref(d.asset)?.price ?? 0;
+  const now = Date.now();
+  const intent: Intent = {
+    id: crypto.randomUUID().slice(0, 8),
+    kind: "fair",
+    fair: fairSpec(d),
+    owner,
+    createdAt: now,
+    expiresAt: now + d.expiresInDays * 86_400_000,
+    text: d.text,
+    from: ctx.from,
+    to: ctx.to,
+    sizing: d.sizing,
+    amountRaw: ctx.amountRaw.toString(),
+    amountUi: ctx.amountUi,
+    // Switch-only fields: neutral values, never read for fair orders.
+    direction: "cheaper",
+    thresholdPct: 0,
+    baseline: { ratio: 1, fromRef: ref, toRef: ref, at: now },
+    triggerRatio: 1,
+    mode: d.mode,
+    style,
+    limits: d.limits,
+    status: d.mode === "live" && style === "auto" ? "awaiting_approval" : "armed",
+    events: [],
+  };
+  const limitText = d.side === "buy" ? `at most ${d.limitBps / 100}% over` : `at most ${d.limitBps / 100}% under`;
+  store.event(intent, "info", `Created. ${d.side === "buy" ? "Buy" : "Sell"} ${d.asset} ${limitText} the real price (now $${ref.toFixed(2)})`);
+  store.put(intent);
+  if (d.mode === "paper" || style === "confirm") return { intent };
+  const total = committedRaw(owner, ctx.from) + ctx.amountRaw;
+  const { tx } = await buildApprovalTx(new PublicKey(owner), config.keeper!.publicKey, ctx.from, ctx.to, total);
+  return { intent, approvalTx: tx };
+}
 
 app.post(
   "/api/intents/:id/confirm",

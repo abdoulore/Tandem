@@ -104,7 +104,8 @@ export type CheckId =
   | "balance"
   | "delegation"
   | "quote"
-  | "price";
+  | "price"
+  | "cap";
 
 export interface Check {
   id: CheckId;
