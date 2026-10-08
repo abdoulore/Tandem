@@ -741,7 +741,16 @@ app.get(
       )
       .sort((a, b) => b.at - a.at)
       .slice(0, 50);
-    const body = { fills, refusals };
+    // Orders whose price was past their limit, so Tandem waited instead of filling.
+    const held = all
+      .flatMap((i) =>
+        i.events
+          .filter((e) => e.message.startsWith("Held: "))
+          .map((e) => ({ at: e.at, order: orderLabel(i), mode: i.mode, owner: shortOwner(i.owner), detail: e.message.slice("Held: ".length), snapshot: e.snapshot })),
+      )
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 50);
+    const body = { fills, refusals, held };
     proofCache = { at: Date.now(), body };
     return body;
   }),

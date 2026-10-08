@@ -653,6 +653,7 @@ export class Engine {
       }
       return;
     }
+    if (!met && freshQuote && pic && pic.limitBps !== null) this.hold(intent, pic);
     if (met && failing) this.refuse(intent, failing.id, `${failing.label}: ${failing.detail}`, pic);
     if (met && !failing && streak < intent.limits.confirmations)
       store.event(intent, "info", `Price within your limit (${streak}/${intent.limits.confirmations} quotes)`);
@@ -703,8 +704,18 @@ export class Engine {
     const k = `${intent.id}|${key}`;
     if (!always && Date.now() - (this.lastRefusal.get(k) ?? 0) < REFUSAL_EVERY_MS) return;
     this.lastRefusal.set(k, Date.now());
-    const snapshot = pic ? { price: pic.ref.price, source: pic.ref.source, ageSec: pic.ref.ageSec, premiumBps: Math.round(pic.premiumBps * 10) / 10, session: pic.session } : undefined;
-    store.event(intent, "warn", `Refused: ${message}`, snapshot);
+    store.event(intent, "warn", `Refused: ${message}`, pic && snapshotOf(pic));
+  }
+
+  /**
+   * Log that the price is past the order's limit, so Tandem is waiting rather than filling (these feed /proof).
+   * Rate-limited like refusals: a held order is re-quoted every 20 seconds.
+   */
+  private hold(intent: Intent, pic: FairPicture) {
+    const k = `${intent.id}|held`;
+    if (Date.now() - (this.lastRefusal.get(k) ?? 0) < REFUSAL_EVERY_MS) return;
+    this.lastRefusal.set(k, Date.now());
+    store.event(intent, "info", `Held: ${fmtBps(pic.premiumBps)} vs real, limit ${fmtLimit(intent.fair!.side, pic.limitBps!)}, ${pic.session}`, snapshotOf(pic));
   }
 
   private fairFill(intent: Intent, pic: FairPicture, inUi: number, outUi: number): FairFill {
@@ -820,6 +831,14 @@ export class Engine {
     return { tx, quote: fresh.summary };
   }
 }
+
+const snapshotOf = (pic: FairPicture) => ({
+  price: pic.ref.price,
+  source: pic.ref.source,
+  ageSec: pic.ref.ageSec,
+  premiumBps: Math.round(pic.premiumBps * 10) / 10,
+  session: pic.session,
+});
 
 /** The fee owner's USDC account for a fair sell when the platform fee is on. Buys and switches never pass it. */
 const feeAccount = (i: Intent) =>

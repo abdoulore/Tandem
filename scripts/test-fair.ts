@@ -106,8 +106,8 @@ const order = (id: string, limitBps: number): Intent => ({
   events: [],
 });
 
-// Wait for the Pyth reference and market hours: at startup only Jupiter prices have arrived.
-for (let i = 0; i < 60 && (prices.refSource("TSLA") !== "pyth" || prices.quote("TSLA").marketOpen === undefined); i++) await new Promise((r) => setTimeout(r, 1000));
+// Wait for a trusted reference and market hours: at startup only Jupiter prices have arrived.
+for (let i = 0; i < 60 && (!["pyth", "finnhub"].includes(prices.refSource("TSLA") ?? "") || prices.quote("TSLA").marketOpen === undefined); i++) await new Promise((r) => setTimeout(r, 1000));
 const open = !!prices.quote("TSLA").marketOpen;
 console.log(`\nTSLA reference ${prices.ref("TSLA")?.price ?? "missing"} (${prices.refSource("TSLA")}), market ${open ? "open" : "closed"}`);
 if (!open) console.log("Market closed: the wide-limit order needs the off-hours opt-in, so it is expected to wait.");
@@ -130,6 +130,11 @@ if (open) {
 }
 check("paper buy demanding a 5% discount never fills", strict.status === "armed", price(strict)?.detail);
 check("its price check shows the refusal reason", price(strict)?.ok === false && !!price(strict)?.detail.includes("limit -500 bps"));
+if (open) {
+  const held = strict.events.filter((e) => e.message.startsWith("Held: "));
+  check("it is logged as held once, not on every quote", held.length === 1, held[0]?.message);
+  check("the held event keeps the real price it saw", !!held[0]?.snapshot && held[0].snapshot.price > 0 && held[0].snapshot.session === "regular");
+}
 
 console.log(`\n${failed ? `${failed} FAILED` : "all checks pass"}`);
 process.exit(failed ? 1 : 0);

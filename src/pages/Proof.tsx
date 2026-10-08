@@ -32,6 +32,7 @@ type Refusal = {
   detail: string;
   snapshot?: { price: number; source?: string; ageSec: number; premiumBps?: number; session?: string };
 };
+type Held = Omit<Refusal, "check">;
 
 const when = (t: number) => new Date(t).toUTCString().slice(5, 22) + " UTC";
 const pct = (bps: number) => `${bps >= 0 ? "+" : ""}${(bps / 100).toFixed(2)}%`;
@@ -39,7 +40,7 @@ const SESSION: Record<string, string> = { regular: "Market open", extended: "Mar
 
 /** Public record of what Tandem filled on mainnet, and what it refused to fill. */
 export function Proof() {
-  const [data, setData] = useState<{ fills: Fill[]; refusals: Refusal[] }>();
+  const [data, setData] = useState<{ fills: Fill[]; refusals: Refusal[]; held?: Held[] }>();
   const load = useCallback(() => {
     fetch("/api/proof")
       .then((r) => r.json())
@@ -70,7 +71,7 @@ export function Proof() {
         <div className="radar-head">
           <div>
             <h1>Proof</h1>
-            <p>Every live order Tandem settled on Solana, and the latest orders it refused to fill because a price or a check was off.</p>
+            <p>Every live order Tandem settled on Solana, the latest orders it refused to fill because a check failed or the price moved, and the orders it held back because the price was past their limit.</p>
           </div>
         </div>
 
@@ -133,7 +134,7 @@ export function Proof() {
         </div>
 
         <h2 className="proof-h">Refused</h2>
-        <p className="radar-window">When the price is past the user&apos;s limit or a safety check fails, Tandem does not fill. Each refusal keeps the price it saw.</p>
+        <p className="radar-window">When a safety check fails, or the price moves past the limit as the order fills, Tandem does not fill. Each refusal keeps the price it saw.</p>
         <div className="radar-table-wrap">
           <table className="radar-table">
             <thead>
@@ -172,6 +173,49 @@ export function Proof() {
                     {r.snapshot ? `$${r.snapshot.price.toFixed(2)}` : <small>n/a</small>}
                     {r.snapshot?.premiumBps !== undefined && <small>token {pct(r.snapshot.premiumBps)}</small>}
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <h2 className="proof-h">Held back</h2>
+        <p className="radar-window">
+          While the token trades past the order&apos;s limit against the real price, Tandem waits. Logged at most every 10 minutes per order.
+        </p>
+        <div className="radar-table-wrap">
+          <table className="radar-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Order</th>
+                <th>Price vs real, limit</th>
+                <th>Session</th>
+                <th>Real price then</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data && !data.held?.length && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    No orders held back yet.
+                  </td>
+                </tr>
+              )}
+              {data?.held?.map((h, k) => (
+                <tr key={`${h.at}-${k}`}>
+                  <td>{when(h.at)}</td>
+                  <td>
+                    <strong>{h.order}</strong>
+                    <small>
+                      {h.mode === "live" ? "Live" : "Paper"}, {h.owner}
+                    </small>
+                  </td>
+                  <td>
+                    <small className="detail">{h.detail.replace(/, [^,]+$/, "")}</small>
+                  </td>
+                  <td>{h.snapshot?.session ? (SESSION[h.snapshot.session] ?? h.snapshot.session) : <small>n/a</small>}</td>
+                  <td className="num">{h.snapshot ? `$${h.snapshot.price.toFixed(2)}` : <small>n/a</small>}</td>
                 </tr>
               ))}
             </tbody>
