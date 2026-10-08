@@ -2,123 +2,119 @@
 
 # Tandem
 
-**Switch when the relationship is right, not just the price.**
+**Buy tokenized stocks at the real price.**
 
-Tandem turns private-market and tokenized-stock views into executable orders on Solana. Set up *"move $100 from OpenAI into Anthropic when Anthropic becomes 10% cheaper relative to OpenAI"* and Tandem turns it into a deterministic trigger, watches the reference prices behind both assets, checks token state, fees, liquidity and slippage, and switches in a single transaction through Jupiter when the condition is met.
+Tandem prices every order for a tokenized stock against the real stock, not the token. Set *"buy $100 of Tesla, paying at most 0.5% over the real price"* and Tandem quotes your actual order size, compares what you would pay with the stock's real price, and fills on Solana only while the price is within your limit. When it is not, Tandem refuses and records why.
 
-It covers **8 pre-IPO companies (PreStocks)** and **13 public stocks (Backed xStocks)**, including mixed pairs like Tesla into SpaceX.
+[Live app](https://tandem.moonrider.online/app) · [Radar](https://tandem.moonrider.online/radar) · [Proof](https://tandem.moonrider.online/proof)
 
-Built for Stocklana (Main track, PreStocks bounty).
+It covers **13 public stocks (Backed xStocks)** and **7 pre-IPO companies (PreStocks)**. Switching from one asset into another when the relationship between them moves is the advanced order type.
 
 ---
 
+## Built during Crypto World's Fair
+
+**Disclosure.** Tandem's first commit is 2026-09-24, inside the hackathon window (Sep 14 to Oct 12, 2026). The first version, a relative-value switching app, was also submitted to Stocklana (Main track, PreStocks bounty) on 2026-09-25. Everything from 2026-10-08 onward was built after that submission: fair-price buy and sell orders, the drift logger and Radar, the Proof page, the trust panel, lifecycle alerts and the platform fee.
+
+| Date | Change |
+|---|---|
+| 2026-09-24 | [e8dba5e](https://github.com/abdoulore/Tandem/commit/e8dba5e) First version: relative-value switches between xStocks and PreStocks |
+| 2026-09-24 | [12524eb](https://github.com/abdoulore/Tandem/commit/12524eb) Pre-IPO price handling · [af93715](https://github.com/abdoulore/Tandem/commit/af93715) landing and app pages |
+| 2026-09-25 | [4eb7ad7](https://github.com/abdoulore/Tandem/commit/4eb7ad7) Pre-IPO safety · [bb8543a](https://github.com/abdoulore/Tandem/commit/bb8543a) renamed to Tandem · [af4bcd7](https://github.com/abdoulore/Tandem/commit/af4bcd7) switch builder |
+| 2026-09-25 | [58325b9](https://github.com/abdoulore/Tandem/commit/58325b9) market-price sizing · [3dd3732](https://github.com/abdoulore/Tandem/commit/3dd3732) Telegram alerts · [9289443](https://github.com/abdoulore/Tandem/commit/9289443) single engine per server |
+| 2026-10-08 | [b5b8ab7](https://github.com/abdoulore/Tandem/commit/b5b8ab7) Drift logger: every token against its reference, every minute |
+| 2026-10-08 | [dcf084c](https://github.com/abdoulore/Tandem/commit/dcf084c) Health endpoint · [9311627](https://github.com/abdoulore/Tandem/commit/9311627) SpaceX marked as listed and paused |
+| 2026-10-08 | [7401252](https://github.com/abdoulore/Tandem/commit/7401252) USDC alongside Token-2022 stock tokens |
+| 2026-10-08 | [bceaa6f](https://github.com/abdoulore/Tandem/commit/bceaa6f) Fair-price order model · [4290713](https://github.com/abdoulore/Tandem/commit/4290713) engine · [f7180ac](https://github.com/abdoulore/Tandem/commit/f7180ac) API · [f02edde](https://github.com/abdoulore/Tandem/commit/f02edde) buy and sell forms |
+| 2026-10-08 | [7af1f66](https://github.com/abdoulore/Tandem/commit/7af1f66) Radar · [4304176](https://github.com/abdoulore/Tandem/commit/4304176) Proof · [9318542](https://github.com/abdoulore/Tandem/commit/9318542) trust panel · [a7a917c](https://github.com/abdoulore/Tandem/commit/a7a917c) lifecycle alerts |
+| 2026-10-08 | [8bb817b](https://github.com/abdoulore/Tandem/commit/8bb817b) Optional platform fee · [60f314d](https://github.com/abdoulore/Tandem/commit/60f314d) landing rewrite |
+
+## Why
+
+- Solana carries about 95% of onchain tokenized-equity volume ([rwa.xyz, July 2026](https://cryptobriefing.com/solana-tokenized-stocks-analytics-dashboard)).
+- More than half of that volume trades outside normal US hours, when the stock itself is not trading ([Blockworks and RWA.xyz, cited](https://www.financemagnates.com/thought-leadership/the-convergence-trade-nobody-planned-on-chain-fridays-to-nyse-mondays/)). That is when tokens drift from their stock ([Pine Analytics](https://pineanalytics.substack.com/p/tokenized-equities-on-solana)).
+- Limit and trigger orders on Solana run on the token's own swap price ([Jupiter](https://developers.jup.ag/blog/lov2-the-any-any-problem)), so they cannot tell a fair price from a premium.
+
+Tandem prices the order against the stock instead, and refuses to fill past the user's limit.
+
 ## Verified on Solana mainnet
 
-**Executed.** A live one-tap switch, created in the app, triggered by the engine and confirmed from a wallet:
+**Live.** A one-tap switch created in the app, triggered by the engine and confirmed from a wallet:
 
 | | |
 |---|---|
 | Transaction | [`2LxBEz5p…DraCEfvJ`](https://solscan.io/tx/2LxBEz5pmcL9BZkjmuYY3xVtZ5ZieLm9jNZUv4AEU3c4QPtbnwY65XbzRk6HdLLWoBConUiEmrEnZntfDraCEfvJ) |
 | When | 2026-09-25 10:17 UTC, slot 450,323,285 |
-| Switch | OpenAI → Anthropic, one tap |
-| Spent | 0.004884 OPENAI |
-| Received | 0.006181 ANTHROPIC, into a token account created in the same transaction |
-| Route | OpenAI → USDC → SOL → Anthropic via Jupiter, 153k compute units |
+| Order | Switch OpenAI into Anthropic, one tap |
+| Spent / received | 0.004884 OPENAI / 0.006181 ANTHROPIC, into an account created in the same transaction |
+| Route | OpenAI to USDC to SOL to Anthropic via Jupiter, 153k compute units |
 
-OpenAI uses Token-2022's scaled UI amount (multiplier 1.4861347 since 2026-07-17), so 0.004884 OPENAI is 0.003287 in raw token units; explorers that ignore the multiplier show the raw figure. Tandem sizes, quotes and reports every amount in UI units.
+Live fair-price fills and refusals are listed as they happen on the [Proof page](https://tandem.moonrider.online/proof).
 
-**Simulated.** Every live path was also dry-run with `simulateTransaction` against current mainnet state, using real token holders as stand-ins (`scripts/simulate.ts`, `scripts/sim-confirm.ts`):
+**Simulated** with `simulateTransaction` against current mainnet state, using real holders as stand-ins:
 
-| Path | Pair | Result |
+| Path | Order | Result |
 |---|---|---|
-| One tap | OpenAI → Anthropic | Received 18,835,497 vs 18,835,427 predicted after the 1% PreStocks input fee |
-| Automatic | TSLAx → SpaceX | Received 16,471,098 vs 16,470,950 quoted; new Token-2022 account created in the same transaction |
-| Automatic | SPYx → NVDAx | Received 22,462,569 vs 22,462,669 quoted; 968 bytes, 140k compute units |
+| Fair buy, keeper (`scripts/simulate-fair.ts`) | $5 USDC into TSLAx | Exactly 5.000000 USDC pulled, received equal to the quote, new account opened in the same transaction, $372.28 a share |
+| Fair sell, keeper | TSLAx into $5 USDC | Exactly the order amount pulled, received above the on-chain minimum, $372.20 a share |
+| Fair sell with a 10 bps platform fee | TSLAx into $5 USDC | Fee account received 4,999 raw USDC through the same transaction |
+| Switch, keeper (`scripts/simulate.ts`) | SPYx into NVDAx | Received above the quote, one atomic transaction |
+| Switch, one tap (`scripts/sim-confirm.ts`) | Anthropic into OpenAI | Received inside the minimum after the 1% PreStocks input fee |
 
-Tandem also corrects for a quoting gap it found: Jupiter quotes include a Token-2022 transfer fee on the output token but not on the input token, so Tandem prices the input fee itself and widens the on-chain minimum out by exactly that fee.
+**Refused.** A live TSLA buy whose price was within its limit was refused because the reference was Backed's price rather than a trusted feed: "Trusted reference price: TSLA: Backed via Jupiter, live needs Pyth or PreStocks prices", recorded with the real price it saw ($373.09) and the token's premium (-0.13%).
 
-## What's live
+Two corrections Tandem makes along the way: Jupiter's quotes leave out the Token-2022 transfer fee on the input token, so Tandem prices it itself; and Jupiter sizes the compute limit for its swap alone, so the keeper's transaction adds room for its own instructions.
 
-- Live PreStocks marks, token prices and valuations; live Pyth data where the key has access
-- A structured switch builder that reads every order back as a plain sentence
-- Relative-value triggers confirmed across 3 fresh price updates per leg
-- Grouped safety checks: reference data, asset state, execution
-- Fee-aware Jupiter quotes and real Solana transaction construction
-- Paper mode on live prices, with an execution receipt for every switch
-- Wallet signing: one-tap PreStocks execution and automatic delegated xStock execution
-- Telegram alerts when a switch is ready to confirm, completes or fails, with buttons that open the app in a mobile wallet
+## What the data shows
 
-## Why
+Tandem logs every token against its real price every minute, and quotes a $100 buy of each one every five minutes (`server/drift.ts`). The [Radar](https://tandem.moonrider.online/radar) shows it live; `npm run drift:report -- --since 2026-10-09` prints medians, p90s and the share of time each token sits more than 0.5%, 1% and 2% from its reference, by US session. Figures for the full window, including the weekend, are added here after it closes.
 
-Private-market tokens rarely trade at their reference value. At the time of writing, OpenAI tokens traded about **29% above** their PreStocks mark and SpaceX about **21% below**. Investors who rotate between these positions, or between a public stock and a private one, watch two prices, work out a ratio by hand, and sell to cash before buying back, with price risk in between. Existing limit orders trigger on one token's own price, not on how two assets move against each other.
-
-Tokenized markets also add costs and risks most holders never check:
-
-- PreStocks charge a **1% transfer fee** on every transfer, which quietly eats small moves.
-- Public-stock tokens trade 24/7 while the real stock does not, so at night and on weekends a token can drift from its stock.
-
-Tandem handles all of it.
-
-## PreStocks integration
-
-Tandem uses PreStocks data for:
-
-- asset discovery, token prices and mark prices for all 8 companies
-- premium and discount to mark, shown live and enforced as a check
-- the mark as the reference price for pre-IPO triggers
-- implied and mark valuations on the Markets page
-
-And it adapts execution to how PreStocks tokens work:
-
-- detects the Token-2022 transfer fee and prices it into every quote
-- never moves a PreStocks token an extra time: switches out of one run as one-tap confirms from the owner's wallet
-- defaults pre-IPO pairs to a 2.5% slippage limit to match thinner pools
-- blocks a switch that would buy far above, or sell far below, the mark
-- warns before arming when fees and spread would eat most of the move
-
-Only PreStocks pre-IPO tokens are integrated.
+Off-hours, the "real price" is the last regular-session price; pre-market, after-hours and overnight prices are not included. In market hours, Backed's reference can lag the stock by a few minutes, and the Radar marks those rows.
 
 ## How it works
 
-1. **Pick the pair, amount and condition.** Choose any two of the 21 assets, an amount in dollars or units, and a relative move. Tandem reads the order back as a plain sentence.
-2. **Tandem fixes a baseline.** The ratio *price of target / price of source* is measured from reference prices at arm time. "6% cheaper" means the ratio falls 6% from that baseline; "outperforms by 5%" means it rises 5%.
-3. **It watches reference prices, not token prices.** Pre-IPO tokens use the **PreStocks mark**; public stocks use **Pyth** equity feeds (`Equity.US.TSLA/USD`).
-4. **Before any trade, every safety check must pass:**
+1. **Order.** Buy or sell an amount in dollars or shares, with a limit: "pay at most 0.5% over the real price", or "sell for no less than 0.5% under". Off-hours fills are off unless you allow them, with their own limit.
+2. **Reference.** The real price is Pyth or the issuer's stock price for public stocks, and the PreStocks mark for pre-IPO tokens. Every price shows its source and age.
+3. **Quote.** Every 20 seconds Tandem quotes your actual order size through Jupiter, after fees, and compares the effective price with the reference.
+4. **Checks.** The price must be within your limit on 3 separate quotes, and every check must pass: trusted and fresh reference (or, off-hours, a last real price under 100 hours old and your opt-in), Pyth confidence, no dividend or split in flight, token not paused, slippage within your limit after fees, funds approved, and the live cap.
+5. **Execution.** Public stocks run automatically: you approve the exact amount once, and the keeper sends one atomic transaction that pulls it, swaps through Jupiter, and delivers the tokens to your wallet. Your limit is the swap's on-chain minimum out. Pre-IPO tokens charge 1% per transfer, so you confirm those yourself in one tap.
+6. **Refusals.** When the price moves past your limit or a check fails, Tandem does not fill, and logs the refusal with the price it saw.
 
-   | Check | What it prevents |
-   |---|---|
-   | Trusted reference prices | Trading live on anything other than Pyth (public) or PreStocks marks (pre-IPO) |
-   | Reference prices fresh | Acting on stale data (60s for Pyth, 3 min for PreStocks marks) |
-   | US market open | Trading an xStock while its real stock is closed |
-   | Pyth confidence tight | Trading when Pyth's confidence interval is wide |
-   | xStocks track their stock | Buying an xStock above, or selling below, its Pyth price by more than 1.5% |
-   | Pre-IPO price vs PreStocks mark | Buying a pre-IPO token above, or selling below, its mark by more than 10% |
-   | No corporate action in flight | Switching around a dividend or split (xStock scaled-UI multiplier change) |
-   | Tokens not paused | Issuer-paused tokens |
-   | Execution within slippage | A quote worse than on-chain DEX prices, after the known transfer fees |
-   | Funds approved / wallet balance | Switches the wallet can't cover |
+**Switches** use the same checks: move from one asset into another when the price of one in units of the other moves by your threshold, confirmed across 3 fresh price updates on each leg.
 
-   The trigger must also hold across **3 fresh price updates on each leg**, so one bad tick can't fire a switch. Tandem also warns before you arm when fees and spread would eat most of the move, and pre-IPO pairs default to a 2.5% slippage limit to match their thinner pools.
-5. **It executes in one of two ways:**
-   - **One tap** (source is a PreStocks token): moving it through the keeper would cost an extra 1% transfer fee, so Tandem doesn't. When everything passes, the switch shows as *Ready*. You press Confirm, Tandem re-runs every check, and you sign a fresh swap from your own wallet.
-   - **Automatic** (source is an xStock): you sign one SPL approval for the exact amount. When the trigger fires, a keeper sends one atomic transaction: pull the approved amount, swap through Jupiter with a hard minimum out, and deliver the new stock straight into your wallet. If any step fails, nothing moves.
+## PreStocks integration
 
-Paper mode runs the same pipeline without moving funds.
+- Marks, token prices and implied valuations for every PreStocks company, with premium or discount to the mark shown live and enforced.
+- The mark is the reference for pre-IPO orders. Companies that list (SpaceX, as SPCX, in June 2026) leave the pre-IPO views, live orders pause, and holders get a conversion reminder before the deadline ([DefiLlama](https://defillama.com/rwa/asset/SPACEX)).
+- The 1% Token-2022 transfer fee is priced into every quote, PreStocks are never moved an extra time, and pre-IPO orders default to a 2.5% slippage limit for thinner pools.
+- Pre-IPO tokens are labelled higher risk: in May 2026 OpenAI and Anthropic said they don't recognize unapproved share transfers ([Invezz](https://invezz.com/uk/news/2026/05/13/solana-ai-prestocks-crash-after-openai-and-anthropic-stock-transfer-warnings/)).
+
+## Security model
+
+- **Your tokens stay in your wallet until an order fills.** Automatic orders use a standard SPL approval capped at the exact amount. My orders shows what the keeper may move, read on-chain, with a Revoke now button.
+- **Your limit is enforced on-chain** as the swap's minimum out. The whole transaction reverts if it can't be met.
+- **The keeper holds only SOL** for network fees and can move only what you approved. Sending the output to your wallet is enforced by Tandem's server code today, not by an on-chain program; that program is on the roadmap.
+- **Only you can place or cancel a live order.** Both need a signature from your wallet.
+- **Live orders are capped** (`MAX_LIVE_USD`, default $250), and live execution can be switched off entirely (`LIVE_EXECUTION=false`).
+- **Live trading needs a trusted reference.** Without one, public-stock orders run in paper mode.
 
 ## Architecture
 
 ```
 browser (React + Solana wallet adapter)
-   │  switch orders, previews, signed messages / transactions
+   │  orders, previews, signed messages and transactions
    ▼
-server (Node + Express)
-   ├─ prices.ts      Pyth Hermes (per-feed entitlement detection), PreStocks API, Jupiter price API
+server (Node + Express, one process)
+   ├─ prices.ts      Pyth Hermes (per-feed entitlement), PreStocks API, Jupiter prices, market hours
    ├─ tokenState.ts  Token-2022 state: scaled-UI multiplier, pause flag, transfer fees
-   ├─ engine.ts      trigger evaluation, safety checks, quotes, execution
-   ├─ jupiter.ts     quotes, swap instructions, swap transactions
-   ├─ solana.ts      approval, atomic switch, submission and confirmation
-   └─ store.ts       intents (JSON file)
-shared/              assets, parser, math, types (used by both sides)
+   ├─ engine.ts      switch and fair-price evaluation, checks, quotes, execution, refusals
+   ├─ drift.ts       drift logger: every token vs its reference each minute, $100 quote probes
+   ├─ jupiter.ts     quotes, swap instructions, swap transactions, platform fee
+   ├─ solana.ts      approvals, revokes, the atomic keeper transaction, submission
+   ├─ lifecycle.ts   conversion deadlines, multiplier changes, pauses
+   ├─ telegram.ts    alerts
+   └─ store.ts       orders (JSON file under DATA_DIR)
+shared/              assets, fair-price math, types, signed messages (used by both sides)
 ```
 
 ## Run it
@@ -127,50 +123,44 @@ Requires Node 20+.
 
 ```bash
 npm install
-cp .env.example .env         # add PYTH_API_KEY (and a private RPC URL if you have one)
+cp .env.example .env         # add PYTH_API_KEY and a private RPC URL if you have them
 npm run keygen               # creates the keeper wallet in .env
-npm run dev                  # site on http://localhost:5173 (app at /app), API on :8787
+npm run dev                  # site on http://localhost:5173, API on :8787
 ```
 
-- **Paper mode** works with no key and no wallet.
-- **One-tap live switches** need a connected wallet holding the source token.
-- **Automatic live switches** also need about 0.02 SOL in the keeper wallet printed by `npm run keygen`.
-
-Production: `npm run build && npm start` serves the app and API from one process on `PORT`.
-
-Other scripts:
+Paper mode works with no key and no wallet. Production: `npm run build && npm start`.
 
 ```bash
-npm test                                   # intent parser cases
-npm run simulate -- TSLA SPACEX 10         # dry-run an automatic switch on mainnet state
+npm test                                         # intent parser
+npm run test:fair                                # fair-price math, then paper orders on live prices
+npm run drift                                    # standalone drift logger
+npm run drift:report -- --since 2026-10-09       # drift statistics by ticker and session
+npx tsx scripts/simulate-fair.ts buy TSLA 5      # dry-run a fair buy on mainnet state (or: sell TSLA 5)
+npm run simulate -- SPY NVDA 50                  # dry-run an automatic switch
 npx tsx scripts/sim-confirm.ts OPENAI ANTHROPIC 0.01   # dry-run a one-tap switch
+npx tsx scripts/check-dashes.ts                  # house style check
 ```
 
 ### Configuration
 
 | Variable | Purpose |
 |---|---|
-| `PYTH_API_KEY` | Pyth Hermes key (Bearer). Tandem detects which feeds the key can read; any other xStock is priced by Backed via Jupiter and runs in paper mode. |
-| `PYTH_HERMES_URL` | Defaults to `https://pyth.dourolabs.app/hermes` |
-| `SOLANA_RPC_URL` | Mainnet RPC; the public endpoint works for demos |
-| `JUPITER_API_URL`, `JUPITER_API_KEY` | Defaults to the keyless `lite-api.jup.ag` |
+| `PYTH_API_KEY`, `PYTH_HERMES_URL` | Pyth Hermes access. Tandem detects which feeds the key can read |
+| `SOLANA_RPC_URL` | Mainnet RPC; use a private one in production |
+| `JUPITER_API_URL`, `JUPITER_API_KEY` | Jupiter swap API |
 | `KEEPER_SECRET_KEY` | Keeper wallet, created by `npm run keygen` |
-| `TELEGRAM_BOT_TOKEN` | Optional. Turns on Telegram alerts; one bot serves every user |
-| `APP_URL` | Public address used in alert links |
-| `LIVE_EXECUTION` | Set to `false` to disable all real switches |
-
-## Security model
-
-- **Your stock stays in your wallet until the switch.** Automatic switches use a standard SPL approval capped at the exact amount of one token. Nothing else in the wallet is reachable, and the approval can be revoked at any time, from Tandem or any wallet.
-- **One atomic transaction.** The approved amount is pulled, swapped through Jupiter with an on-chain minimum out, and delivered straight to your wallet's token account. If any step fails, the whole transaction reverts.
-- **Only you can arm or cancel.** Live switches and cancellations are authorized by a signature from your wallet, so no one can arm a switch against your approval.
-- **One-tap switches grant no approval at all.** You sign the swap yourself when it's ready.
-- **The keeper holds only SOL** for network fees.
+| `MAX_LIVE_USD` | Live orders above this are refused (default 250) |
+| `PLATFORM_FEE_BPS`, `FEE_OWNER` | Optional fee on fair sells, in USDC. Off unless both are set |
+| `TELEGRAM_BOT_TOKEN`, `APP_URL` | Optional Telegram alerts and their links |
+| `DATA_DIR` | Where orders and drift logs are written |
+| `LIVE_EXECUTION` | `false` disables all real orders |
 
 ## Roadmap
 
-- **On-chain switch program.** Enforce the trigger and the swap in a Solana program with on-chain Pyth price verification, so an approval can only ever execute the switch it was given for.
-- **Push notifications** for one-tap switches on mobile.
-- **Multi-leg rotations**, such as moving out of an index into a basket of names.
+- **On-chain order program** that verifies the reference price and enforces the swap and its recipient, so an approval can only execute the order it was given for.
+- **Pyth Pro session feeds**, so pre-market, after-hours and overnight orders use a live price rather than the last close.
+- **Issuer routing**: quote xStocks and Ondo tokens for the same stock against the same reference, and fill on the better one.
+- **Jupiter Swap V2** migration, which also allows fees on buys.
+- **A fair-price API** for wallets and lending markets that need to know whether a token trades at its stock's price.
 
-Availability: xStocks and PreStocks are offered by their issuers outside the US; see their terms for eligibility.
+Not investment advice. xStocks and PreStocks are offered by their issuers outside the US; see their terms for eligibility.
