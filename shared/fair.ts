@@ -40,6 +40,17 @@ export function limitMinOutUi(side: Side, inUi: number, ref: number, limitBps: n
 }
 
 /**
+ * Why a fresh quote can no longer fill inside the limit, or undefined when it can. Both must hold: the quoted
+ * price is inside the limit, and the swap's on-chain minimum (what the wallet is guaranteed to receive) is no
+ * lower than the limit's minimum-out, so a price that moves after the check still cannot fill past the limit.
+ */
+export function limitBreach(side: Side, premium: number, limitBps: number, thresholdUi: number, minOutUi: number): "price" | "minOut" | undefined {
+  if (!fairConditionMet(side, premium, limitBps)) return "price";
+  if (thresholdUi < minOutUi) return "minOut";
+  return undefined;
+}
+
+/**
  * Slippage to request so the swap's on-chain minimum-out (quoted * (1 - slippage)) is no looser than
  * the user's limit or the slippage budget. 0 means the quote has no room left under the limit.
  */

@@ -1,6 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import { USDC, getAsset, legAsset, tokenSymbol } from "../shared/assets";
-import { activeLimit, effectivePrice, fairConditionMet, limitMinOutUi, premiumBps, sessionOf, slippageForLimit } from "../shared/fair";
+import { activeLimit, effectivePrice, fairConditionMet, limitBreach, limitMinOutUi, premiumBps, sessionOf, slippageForLimit } from "../shared/fair";
 import { changePct, conditionMet, fmtNum, progress, shortfallBps, uiFromRaw } from "../shared/math";
 import type { Check, ExecStyle, Execution, FairFill, FairPicture, FairSpec, Intent, Limits, Mode, QuoteSummary, RefSnapshot, Side } from "../shared/types";
 import { config } from "./config";
@@ -661,7 +661,8 @@ export class Engine {
 
   /**
    * A fresh quote whose on-chain minimum-out enforces the user's limit, never looser than the slippage
-   * budget. Throws a Refusal when the price has moved past the limit since the last check.
+   * budget. Throws a Refusal when the price has moved past the limit since the last check, or when the fresh
+   * quote's on-chain minimum would be looser than the limit (the price moved between the two quotes).
    */
   private async limitQuote(intent: Intent) {
     const spec = intent.fair!;
@@ -675,8 +676,23 @@ export class Engine {
     const budget = Math.max(10, Math.min(100, Math.floor(intent.limits.maxSlippageBps - Math.max(0, first.summary.shortfallBps))));
     const slip = slippageForLimit(first.summary.outUi, minOut, budget);
     if (slip < 1) throw new Refusal("Price vs real stock: no room left under your limit");
-    const fresh = await this.quoteFair(spec.side, spec.asset, BigInt(intent.amountRaw), intent.style, slip, true);
-    return { fresh, pic: this.fairPicture(spec, fresh.eff) ?? pic, slip };
+    // quoteFair adds a sell's input transfer fee to the slippage Jupiter applies, which lowers its minimum by a
+    // little more than outUi accounts for; ask for that much less so the minimum still sits at the limit.
+    const srcFeeBps = spec.side === "sell" ? this.tokens.feeBps(spec.asset) : 0;
+    const ask = slip - Math.ceil((slip * srcFeeBps) / 10_000);
+    const fresh = await this.quoteFair(spec.side, spec.asset, BigInt(intent.amountRaw), intent.style, ask, true);
+    const now = this.fairPicture(spec, fresh.eff);
+    if (!now) throw new Refusal("Reference price: missing");
+    if (now.limitBps === null) throw new Refusal("Off-hours fill allowed: market closed and this order fills in regular hours only");
+    const out = legAsset(spec.side === "buy" ? spec.asset : USDC.ticker);
+    // The threshold is what the wallet is guaranteed on-chain, so no transfer-fee factor applies to it.
+    const thresholdUi = uiFromRaw(fresh.raw.otherAmountThreshold, out.decimals, spec.side === "buy" ? this.tokens.multiplier(spec.asset) : 1);
+    const floorUi = limitMinOutUi(spec.side, fresh.summary.inUi, now.ref.price, now.limitBps);
+    const breach = limitBreach(spec.side, now.premiumBps, now.limitBps, thresholdUi, floorUi);
+    if (breach === "price") throw new Refusal(`Price vs real stock: moved to ${fmtBps(now.premiumBps)}, limit ${fmtLimit(spec.side, now.limitBps)}`);
+    if (breach === "minOut")
+      throw new Refusal(`Price vs real stock: on-chain minimum ${fmtNum(thresholdUi)} is below the ${fmtNum(floorUi)} your limit requires`);
+    return { fresh, pic: now, slip: ask };
   }
 
   /**

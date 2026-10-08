@@ -4,7 +4,7 @@
 //    demands a 5% discount never does. Runs in a scratch DATA_DIR so real intents are untouched.
 import os from "node:os";
 import path from "node:path";
-import { activeLimit, effectivePrice, fairConditionMet, limitMinOutUi, premiumBps, sessionOf, slippageForLimit } from "../shared/fair";
+import { activeLimit, effectivePrice, fairConditionMet, limitBreach, limitMinOutUi, premiumBps, sessionOf, slippageForLimit } from "../shared/fair";
 
 let failed = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -40,6 +40,24 @@ check("sell min-out enforces the limit", near(limitMinOutUi("sell", 0.25, 400, 5
 check("slippage leaves exactly the room the limit allows", slippageForLimit(100, 99.5, 100) === 50);
 check("slippage never exceeds the budget", slippageForLimit(100, 90, 30) === 30);
 check("no room under the limit means zero slippage", slippageForLimit(100, 100.2, 100) === 0);
+
+// The fresh quote before a fill: price inside the limit and an on-chain minimum no looser than the limit.
+// Buy $100 at most 0.5% over $400 needs at least 100 / 402 shares on-chain.
+const buyFloor = limitMinOutUi("buy", 100, 400, 50);
+check("fresh buy inside the limit with a tight minimum fills", limitBreach("buy", 30, 50, buyFloor, buyFloor) === undefined);
+check("fresh buy past the limit is refused", limitBreach("buy", 51, 50, buyFloor * 1.01, buyFloor) === "price");
+check("fresh buy whose minimum sits under the limit is refused", limitBreach("buy", 30, 50, buyFloor * 0.999, buyFloor) === "minOut");
+// The case the second quote exists for: the first quote left 50 bps of room, the fresh one came back 30 bps
+// lower, so the same slippage puts the on-chain minimum about 30 bps under the limit.
+const firstOut = buyFloor * 1.005, slip = slippageForLimit(firstOut, buyFloor, 100), freshOut = firstOut * 0.997;
+check("a fresh quote that moved after the first is caught by its minimum", limitBreach("buy", 20, 50, freshOut * (1 - slip / 10_000), buyFloor) === "minOut");
+const sellFloor = limitMinOutUi("sell", 0.25, 400, 50);
+check("fresh sell at the limit's minimum fills", limitBreach("sell", -40, 50, sellFloor, sellFloor) === undefined);
+check("fresh sell past the limit is refused", limitBreach("sell", -51, 50, sellFloor, sellFloor) === "price");
+check("fresh sell whose minimum sits under the limit is refused", limitBreach("sell", -40, 50, sellFloor - 0.01, sellFloor) === "minOut");
+// A pre-IPO sell: Jupiter applies slippage plus the 1% fee, so asking slip minus the fee's share keeps it at the limit.
+const out = 100, fee = 100, room = slippageForLimit(out * (1 - fee / 10_000), 98.5, 100), ask = room - Math.ceil((room * fee) / 10_000);
+check("pre-IPO sell: trimmed slippage keeps the on-chain minimum at the limit", out * (1 - (ask + fee) / 10_000) >= 98.5, `room ${room}, ask ${ask}`);
 
 if (process.argv.includes("--unit")) {
   console.log(`\n${failed ? `${failed} FAILED` : "all unit checks pass"}`);
