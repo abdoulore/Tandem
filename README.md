@@ -61,7 +61,7 @@ Tandem prices the order against the stock instead, and refuses to fill past the 
 | Spent / received | 5.000000 USDC / 0.01307155 TSLAx, into an account created in the same transaction |
 | Price | $382.51 a share against Friday's close of $382.70 (Finnhub): 0.05% under, after 3 quotes inside the limit |
 
-**Held back.** One minute later, the same wallet placed a $5 CRCL buy with a 0.5% limit. CRCLx traded 1.39% over Friday's close of $84.51, so Tandem waited instead of filling, and logged it: "Held: +139 bps vs real, limit +50 bps, weekend".
+**Held back.** One minute later, the same wallet placed a $5 CRCL buy with a 0.5% limit. CRCLx traded 1.39% over Friday's close of $84.51, so Tandem waited instead of filling, and logged it: "Held: +139 bps vs real, limit +50 bps, weekend". The owner then pressed Revoke now in the trust panel: one signed transaction ([`4yYjFsDK…bu9GxsR8`](https://solscan.io/tx/4yYjFsDKUMt5pVvFi8QTA85UJXYhNQD1vtggRzSMdd8xoBoXexL6adNF97m7Dbfbt7xbjNRyfRhn7KZWbu9GxsR8), 14:28 UTC) removed the keeper's approval on-chain and cancelled the held order with it.
 
 Live fair-price fills, refusals and held orders are listed as they happen on the [Proof page](https://tandem.moonrider.online/proof).
 
