@@ -51,7 +51,19 @@ Tandem prices the order against the stock instead, and refuses to fill past the 
 | Spent / received | 0.004884 OPENAI / 0.006181 ANTHROPIC, into an account created in the same transaction |
 | Route | OpenAI to USDC to SOL to Anthropic via Jupiter, 153k compute units |
 
-Live fair-price fills and refusals are listed as they happen on the [Proof page](https://tandem.moonrider.online/proof).
+**Live fair-price buy.** An automatic order placed in the app on a Sunday, with off-hours fills allowed up to 1% over Friday's close. The keeper pulled exactly the approved USDC, swapped through Jupiter and delivered the stock to the owner in one transaction:
+
+| | |
+|---|---|
+| Transaction | [`3mSNWBjH…S2S3voHb`](https://solscan.io/tx/3mSNWBjHw22TNTTWdEvyPKhQgPpucF4yxyfVsKfHpQ5PfEMQm8WGQRZ62jwYVHioqitUH3eb3fTn555qS2S3voHb) |
+| When | 2026-10-11 14:06 UTC, slot 455,678,245, weekend (US market closed) |
+| Order | Buy $5 of TSLA, at most 0.5% over the real price in market hours, 1% off-hours |
+| Spent / received | 5.000000 USDC / 0.01307155 TSLAx, into an account created in the same transaction |
+| Price | $382.51 a share against Friday's close of $382.70 (Finnhub): 0.05% under, after 3 quotes inside the limit |
+
+**Held back.** One minute later, the same wallet placed a $5 CRCL buy with a 0.5% limit. CRCLx traded 1.39% over Friday's close of $84.51, so Tandem waited instead of filling, and logged it: "Held: +139 bps vs real, limit +50 bps, weekend".
+
+Live fair-price fills, refusals and held orders are listed as they happen on the [Proof page](https://tandem.moonrider.online/proof).
 
 **Simulated** with `simulateTransaction` against current mainnet state, using real holders as stand-ins:
 
