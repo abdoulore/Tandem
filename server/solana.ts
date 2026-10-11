@@ -84,6 +84,19 @@ export async function buildFullRevokeTx(owner: PublicKey, ticker: string) {
   return Buffer.from(new VersionedTransaction(msg).serialize()).toString("base64");
 }
 
+const REVOKE = 5; // SPL Token and Token-2022 instruction tag
+
+/**
+ * True when a signed transaction revokes the delegate on `source`. Other instructions are ignored: wallets
+ * such as Phantom add their own (compute budget, Lighthouse assertions), and the owner signed all of them.
+ */
+export function revokesOn(tx: VersionedTransaction, source: PublicKey, program: PublicKey): boolean {
+  const keys = tx.message.staticAccountKeys;
+  return tx.message.compiledInstructions.some(
+    (ix) => !!keys[ix.programIdIndex]?.equals(program) && ix.data[0] === REVOKE && !!keys[ix.accountKeyIndexes[0]]?.equals(source),
+  );
+}
+
 /**
  * The atomic switch, signed only by the keeper:
  *   1. pull `amountRaw` of the source (stock or USDC) from the owner (keeper is the SPL delegate)

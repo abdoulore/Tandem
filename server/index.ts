@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
-import { ComputeBudgetProgram, LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { ASSETS, ASSET_BY_TICKER, USDC, getAsset, isConverting, legAsset, tokenSymbol } from "../shared/assets";
 import { pairRatio, rawFromUi, sharesForSizing, triggerRatio, uiFromRaw } from "../shared/math";
 import { parseIntent } from "../shared/parser";
@@ -28,7 +28,7 @@ import { series, summarize, type DriftSummary, type SeriesPoint } from "./driftS
 import { Engine } from "./engine";
 import { lifecycleEvents } from "./lifecycle";
 import { PriceService } from "./prices";
-import { ata, buildApprovalTx, buildFullRevokeTx, buildRevokeTx, conn, programId, submitSigned, tokenAccountState } from "./solana";
+import { ata, buildApprovalTx, buildFullRevokeTx, buildRevokeTx, conn, programId, revokesOn, submitSigned, tokenAccountState } from "./solana";
 import { store } from "./store";
 import { telegram } from "./telegram";
 import { TokenState } from "./tokenState";
@@ -664,14 +664,8 @@ app.post(
     const keys = tx.message.staticAccountKeys;
     const pk = new PublicKey(owner);
     if (!keys[0]?.equals(pk)) throw new Error("The revoke must be paid and signed by the owner");
-    const source = ata(pk, mint);
-    // Only compute-budget instructions and token-program instructions on this one account.
-    const onlyRevoke = tx.message.compiledInstructions.every((ix) => {
-      const prog = keys[ix.programIdIndex];
-      if (prog?.equals(ComputeBudgetProgram.programId)) return true;
-      return !!prog?.equals(programId(mint)) && keys[ix.accountKeyIndexes[0]]?.equals(source);
-    });
-    if (!onlyRevoke) throw new Error("Not a revoke for this token");
+    // Orders are cancelled below, so the transaction must really revoke this token's approval.
+    if (!revokesOn(tx, ata(pk, mint), programId(mint))) throw new Error("Not a revoke for this token");
     const signature = await submitSigned(String(req.body?.signedTx));
     const cancelled = store
       .byOwner(owner)
