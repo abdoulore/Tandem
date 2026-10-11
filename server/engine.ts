@@ -133,7 +133,7 @@ export class Engine {
         id: "peg",
         label: "xStocks track their stock",
         ok: pub.every((p) => p.ok),
-        detail: pub.map((p) => p.text).join(" · ") + ` vs Pyth (limit ${limits.maxPegDeviationBps})`,
+        detail: pub.map((p) => p.text).join(" · ") + ` vs the real price (limit ${limits.maxPegDeviationBps})`,
       });
     const priv = legs.filter((l) => l.kind === "prestock").map((l) => pegLine(l, limits.maxPrivatePremiumBps));
     if (priv.length)

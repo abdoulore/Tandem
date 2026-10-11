@@ -483,7 +483,7 @@ app.post(
     if (st.delegate !== config.keeper?.publicKey.toBase58() || st.delegatedAmount < BigInt(intent.amountRaw))
       throw new Error("Approval not found on-chain yet - wait a few seconds and retry");
     intent.status = "armed";
-    store.event(intent, "success", "Approval confirmed on-chain. Monitoring with Pyth.");
+    store.event(intent, "success", "Approval confirmed on-chain. Watching the price.");
     store.touch();
     return { intent };
   }),
